@@ -139,30 +139,10 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       cursor: pointer;
       line-height: 1;
       padding: 6px;
-      border-radius: 50%;
       user-select: none;
       -webkit-user-select: none;
       display: inline-block;
-      transition: transform 0.15s ease, background-color 0.2s ease;
       outline: none;
-    }
-
-    #speechToggle:hover {
-      transform: scale(1.15);
-      background-color: rgba(0, 0, 0, 0.04);
-    }
-
-    #speechToggle:active {
-      transform: scale(0.92);
-    }
-
-    #speechToggle.listening {
-      animation: gentle-pulse 2s infinite ease-in-out;
-    }
-
-    @keyframes gentle-pulse {
-      0%, 100% { transform: scale(1); }
-      50% { transform: scale(1.1); }
     }
 
     #promptText {
@@ -217,7 +197,7 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
   <div class="libleft">
     <div id="info"></div>
     <span onclick="location.reload()" style="cursor: pointer;" title="Reload">👨‍💻</span> <a href="http://cwmoriarty.com">cwmoriarty.com</a>
-    <div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">Built 2026-10-29 03:12 UTC</div>
+    <div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">Built 2026-10-29 03:14 UTC</div>
   </div>
 
   <script>
@@ -387,21 +367,18 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       speechToggle.textContent = icon;
 
       if (icon === '🐵') {
-        speechToggle.className = 'listening';
         speechToggle.title = "Speech mode ON (listening) - Click to turn OFF";
         speechToggle.setAttribute('aria-label', 'Speech mode ON');
         if (promptText) {
           promptText.textContent = promptMessage || 'Ask "How do you spell ______"?';
         }
       } else if (icon === '🙊') {
-        speechToggle.className = '';
         speechToggle.title = "Speech mode OFF - Click to turn ON";
         speechToggle.setAttribute('aria-label', 'Speech mode OFF');
         if (promptText) {
           promptText.textContent = promptMessage || 'Speech mode is OFF — click 🙊 to listen';
         }
       } else if (icon === '🙉') {
-        speechToggle.className = '';
         speechToggle.title = "Didn't hear 'How do you spell...' - Try again!";
         speechToggle.setAttribute('aria-label', "Didn't match spelling command");
         if (promptText) {
