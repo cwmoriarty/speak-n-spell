@@ -152,7 +152,7 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       min-height: 24px;
     }
 
-    /* Fallback input for Firefox and keyboard typing */
+    /* Fallback input for keyboard typing */
     #textFallbackForm {
       margin-top: 10px;
       display: none;
@@ -193,6 +193,51 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       background: #1557b0;
     }
 
+    /* Loading Overlay for Firefox Engine initialization */
+    #loadingOverlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(255, 255, 255, 0.94);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      transition: opacity 0.3s ease;
+    }
+
+    .loadingCard {
+      background: white;
+      border: 1px solid #e0e0e0;
+      border-radius: 16px;
+      padding: 28px 36px;
+      text-align: center;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+      max-width: 380px;
+      width: 88%;
+    }
+
+    .progressBarTrack {
+      width: 100%;
+      height: 8px;
+      background: #eee;
+      border-radius: 4px;
+      overflow: hidden;
+      margin: 16px 0 10px 0;
+    }
+
+    #progressBar {
+      width: 5%;
+      height: 100%;
+      background: #1a73e8;
+      border-radius: 4px;
+      transition: width 0.2s ease;
+    }
+
     @media (max-width: 768px) {
       .centered {
         top: 62%;
@@ -216,6 +261,20 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
 </head>
 
 <body>
+  <!-- Loading overlay for Firefox -->
+  <div id="loadingOverlay">
+    <div class="loadingCard">
+      <div style="font-size: 3.5rem; margin-bottom: 8px;">🐵</div>
+      <div style="font-size: 1.25rem; font-weight: bold; margin-bottom: 6px;">Setting Up Voice Mode</div>
+      <div id="loadingStatus" style="font-size: 0.95rem; color: #555;">Loading speech engine for Firefox...</div>
+      <div class="progressBarTrack">
+        <div id="progressBar"></div>
+      </div>
+      <div style="font-size: 11px; color: #888;">Downloads once and caches locally (~39MB)</div>
+      <button onclick="skipLoading()" style="background:none; border:none; color:#1a73e8; font-size:12px; margin-top:14px; cursor:pointer; text-decoration:underline;">Skip &amp; Type Word</button>
+    </div>
+  </div>
+
   <!-- Split display: Left = Word, Right = Icon. If no icon: Word is Centered (no split) -->
   <div id="displayArea" class="no-split">
     <div id="wordContainer">
@@ -234,7 +293,7 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
     <h1>Speak N Spell 0.1a</h1>
     <div id="promptText">Ask "How do you spell ______"?</div>
 
-    <!-- Firefox / Text Input Fallback -->
+    <!-- Fallback Text Input -->
     <form id="textFallbackForm" onsubmit="handleManualSpell(event)">
       <input type="text" id="manualWordInput" placeholder="Type a word to spell..." autocomplete="off" autocapitalize="none" />
       <button type="submit" id="manualSpellBtn">Spell</button>
@@ -244,7 +303,7 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
   <div class="libleft">
     <div id="info"></div>
     <span onclick="location.reload()" style="cursor: pointer;" title="Reload">👨‍💻</span> <a href="http://cwmoriarty.com">cwmoriarty.com</a>
-    <div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">Built 2026-10-29 03:26 UTC</div>
+    <div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">Built 2026-10-29 03:32 UTC</div>
   </div>
 
   <script>
@@ -257,12 +316,17 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
     let recognition = null;
     let voices = [];
 
-    // Option 2 (Firefox / client-side STT) state
-    let isOption2Active = false;
-    let mediaStream = null;
-    let mediaRecorder = null;
-    let recordedAudioChunks = [];
+    // Firefox continuous Voice Activity Detection (VAD) & Whisper state
     let whisperPipeline = null;
+    let audioContext = null;
+    let mediaStreamSource = null;
+    let audioProcessor = null;
+    let mediaStream = null;
+    let isListeningFirefox = false;
+    let isProcessingFirefox = false;
+    let isSpeakingVoice = false;
+    let speechBuffer = [];
+    let silenceBuffers = 0;
 
     const displayArea = document.getElementById('displayArea');
     const wordImage = document.getElementById('wordImage');
@@ -270,6 +334,9 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
     const promptText = document.getElementById('promptText');
     const textFallbackForm = document.getElementById('textFallbackForm');
     const manualWordInput = document.getElementById('manualWordInput');
+    const loadingOverlay = document.getElementById('loadingOverlay');
+    const loadingStatus = document.getElementById('loadingStatus');
+    const progressBar = document.getElementById('progressBar');
     const upperEl = document.getElementById('resultUpper');
     const lowerEl = document.getElementById('resultLower');
     const infoEl = document.getElementById('info');
@@ -482,7 +549,7 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       TTS(word + " is spelled " + spelledOut);
     }
 
-    // Fallback: Manual Text Input (Option 1)
+    // Manual Text Input Fallback
     function handleManualSpell(e) {
       if (e) e.preventDefault();
       const val = (manualWordInput.value || "").trim();
@@ -492,141 +559,200 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       handleSpellingMatch(val);
     }
 
-    // Click handler for speechToggle
-    function handleIconClick() {
-      if (recognition) {
-        // Native Web Speech mode (Chrome, Safari, Edge, Thorium)
-        toggleSpeechMode();
-      } else {
-        // Option 2: Fallback microphone capture via MediaRecorder (Firefox, etc.)
-        toggleOption2Recording();
-      }
+    function skipLoading() {
+      if (loadingOverlay) loadingOverlay.style.display = 'none';
+      if (textFallbackForm) textFallbackForm.style.display = 'flex';
+      if (manualWordInput) manualWordInput.focus();
     }
 
-    function toggleSpeechMode() {
+    // Click handler for speechToggle: toggles speech mode on/off
+    function handleIconClick() {
       if (isSpeechEnabled) {
         isSpeechEnabled = false;
         setIcon('🙊');
-        stopRecognition();
+        if (recognition) stopRecognition();
         if ('speechSynthesis' in window) window.speechSynthesis.cancel();
       } else {
         isSpeechEnabled = true;
         setIcon('🐵');
         infoEl.textContent = '';
-        startRecognition();
+        if (recognition) {
+          startRecognition();
+        } else if (!isListeningFirefox) {
+          startFirefoxContinuousListening();
+        }
       }
     }
 
-    // Option 2: Browser-Native Microphone via MediaRecorder + WebAssembly STT
-    async function toggleOption2Recording() {
-      if (isOption2Active) {
-        stopOption2Recording();
-      } else {
-        startOption2Recording();
+    // Helper: concatenate float32 audio chunks
+    function flattenFloat32Arrays(chunks) {
+      let totalLength = 0;
+      for (let i = 0; i < chunks.length; i++) totalLength += chunks[i].length;
+      const flat = new Float32Array(totalLength);
+      let offset = 0;
+      for (let i = 0; i < chunks.length; i++) {
+        flat.set(chunks[i], offset);
+        offset += chunks[i].length;
       }
+      return flat;
     }
 
-    async function startOption2Recording() {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        promptText.textContent = "Microphone unavailable. Use the text box below!";
-        manualWordInput.focus();
-        return;
-      }
+    // Firefox continuous Voice Activity Detection (VAD)
+    async function startFirefoxContinuousListening() {
+      if (!isSpeechEnabled || isListeningFirefox) return;
 
       try {
-        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        mediaRecorder = new MediaRecorder(mediaStream);
-        recordedAudioChunks = [];
-
-        mediaRecorder.ondataavailable = (e) => {
-          if (e.data.size > 0) recordedAudioChunks.push(e.data);
-        };
-
-        mediaRecorder.onstop = async () => {
-          if (mediaStream) {
-            mediaStream.getTracks().forEach(t => t.stop());
-          }
-          const audioBlob = new Blob(recordedAudioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
-          await processOption2Audio(audioBlob);
-        };
-
-        mediaRecorder.start();
-        isOption2Active = true;
-        speechToggle.textContent = '🔴';
-        promptText.textContent = 'Listening in Firefox... Click 🔴 when finished';
-      } catch (err) {
-        console.warn("Firefox mic capture failed:", err);
-        infoEl.textContent = "⚠️ Mic permission denied. You can type words below!";
-        promptText.textContent = 'Type a word to spell:';
-        speechToggle.textContent = '🐵';
-        manualWordInput.focus();
-      }
-    }
-
-    function stopOption2Recording() {
-      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-        mediaRecorder.stop();
-      }
-      isOption2Active = false;
-      speechToggle.textContent = '🐵';
-      promptText.textContent = 'Transcribing audio...';
-    }
-
-    async function processOption2Audio(blob) {
-      try {
-        promptText.textContent = 'Loading speech engine...';
-
-        // Lazy-load Transformers.js only when Option 2 is actively used in Firefox
-        if (!whisperPipeline) {
-          const { pipeline, env } = await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2');
-          env.allowLocalModels = false;
-          whisperPipeline = await pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny.en');
+        if (!audioContext) {
+          audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+        }
+        if (audioContext.state === 'suspended') {
+          await audioContext.resume();
         }
 
-        promptText.textContent = 'Transcribing voice...';
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-        const arrayBuf = await blob.arrayBuffer();
-        const audioBuf = await audioCtx.decodeAudioData(arrayBuf);
-        const float32 = audioBuf.getChannelData(0);
+        if (!mediaStream) {
+          mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        }
 
-        const out = await whisperPipeline(float32);
-        const text = (out && out.text) ? out.text.trim() : '';
-        console.log("Transcribed via Whisper:", text);
+        mediaStreamSource = audioContext.createMediaStreamSource(mediaStream);
+        audioProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+
+        audioProcessor.onaudioprocess = (e) => {
+          if (!isSpeechEnabled || isSpeaking || isProcessingFirefox) {
+            return;
+          }
+
+          const channel = e.inputBuffer.getChannelData(0);
+
+          // Calculate RMS volume level
+          let sumSquares = 0;
+          for (let i = 0; i < channel.length; i++) {
+            sumSquares += channel[i] * channel[i];
+          }
+          const rms = Math.sqrt(sumSquares / channel.length);
+
+          if (rms > 0.016) {
+            // Voice energy detected
+            isSpeakingVoice = true;
+            silenceBuffers = 0;
+            speechBuffer.push(new Float32Array(channel));
+          } else if (isSpeakingVoice) {
+            // Silence trailing after speech
+            speechBuffer.push(new Float32Array(channel));
+            silenceBuffers++;
+
+            // ~1 second of trailing silence (4 * 0.256s)
+            if (silenceBuffers >= 4) {
+              isSpeakingVoice = false;
+              silenceBuffers = 0;
+              const audioData = flattenFloat32Arrays(speechBuffer);
+              speechBuffer = [];
+
+              // If at least ~0.75 seconds of audio captured
+              if (audioData.length >= 12000) {
+                processFirefoxAudio(audioData);
+              }
+            }
+          }
+        };
+
+        mediaStreamSource.connect(audioProcessor);
+        audioProcessor.connect(audioContext.destination);
+        isListeningFirefox = true;
+        setIcon('🐵');
+      } catch (err) {
+        console.warn("Firefox continuous mic setup failed:", err);
+        infoEl.textContent = "⚠️ Mic permission needed. Click 🐵 to allow.";
+        textFallbackForm.style.display = 'flex';
+      }
+    }
+
+    // Transcribe speech captured in Firefox via Whisper
+    async function processFirefoxAudio(float32Data) {
+      if (isProcessingFirefox) return;
+      isProcessingFirefox = true;
+
+      try {
+        if (!whisperPipeline) {
+          isProcessingFirefox = false;
+          return;
+        }
+
+        const out = await whisperPipeline(float32Data);
+        const transcript = (out && out.text) ? out.text.trim() : '';
+        console.log("Firefox VAD transcript:", transcript);
 
         const regex = /how do you spell\s+([a-zA-Z\-]+)/i;
-        const match = text.match(regex);
+        const match = transcript.match(regex);
 
         if (match && match[1]) {
           setIcon('🐵');
-          handleSpellingMatch(match[1]);
-        } else if (text.length > 0) {
-          const cleanWord = text.replace(/[^a-zA-Z]/g, '');
+          await handleSpellingMatch(match[1]);
+        } else if (transcript.length > 0) {
+          // If child said a word without "how do you spell"
+          const cleanWord = transcript.replace(/[^a-zA-Z]/g, '');
           if (cleanWord.length > 1) {
             setIcon('🐵');
-            handleSpellingMatch(cleanWord);
+            await handleSpellingMatch(cleanWord);
           } else {
+            console.log("Speech did not match command:", transcript);
             setIcon('🙉');
           }
         } else {
           setIcon('🙉');
         }
       } catch (err) {
-        console.error("Option 2 STT error:", err);
-        promptText.textContent = 'Could not transcribe voice. Type below instead!';
+        console.error("Whisper VAD processing error:", err);
         setIcon('🙉');
-        manualWordInput.focus();
+      } finally {
+        isProcessingFirefox = false;
       }
     }
 
-    // Speech Recognition Setup (Native Web Speech API for Chrome / Safari / Edge / Thorium)
+    // Initialize Firefox Whisper Engine by default
+    async function initFirefoxWhisperEngine() {
+      textFallbackForm.style.display = 'flex';
+      loadingOverlay.style.display = 'flex';
+
+      try {
+        const { pipeline, env } = await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2');
+        env.allowLocalModels = false;
+
+        whisperPipeline = await pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny.en', {
+          progress_callback: (item) => {
+            if (item.status === 'progress' && item.progress) {
+              const pct = Math.round(item.progress);
+              progressBar.style.width = pct + '%';
+              loadingStatus.textContent = `Downloading model (${pct}%)...`;
+            } else if (item.status === 'done') {
+              loadingStatus.textContent = 'Voice engine ready!';
+              progressBar.style.width = '100%';
+            }
+          }
+        });
+
+        // Hide loading screen and start continuous listening
+        setTimeout(() => {
+          loadingOverlay.style.display = 'none';
+          promptText.textContent = 'Ask "How do you spell ______"?';
+          startFirefoxContinuousListening();
+        }, 400);
+
+      } catch (err) {
+        console.error("Failed to load Whisper in Firefox:", err);
+        loadingOverlay.style.display = 'none';
+        promptText.textContent = 'Ask "How do you spell ______" or type below:';
+        infoEl.textContent = 'Firefox: Type words below or click 🐵 to retry mic.';
+      }
+    }
+
+    // Speech Recognition Setup: Native Web Speech API (Chrome/Safari) vs Whisper (Firefox)
     const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
 
     if (!SpeechRecognitionAPI) {
-      // Firefox and unsupported browsers: Enable Fallback Form + Option 2
-      textFallbackForm.style.display = 'flex';
-      promptText.textContent = 'Ask "How do you spell ______" or type below:';
-      infoEl.textContent = 'Firefox detected: Type above or click 🐵 to record audio.';
+      // Firefox: Load Whisper by default and show loading screen
+      initFirefoxWhisperEngine();
     } else {
+      // Chrome / Safari / Thorium / Edge: Native instant Web Speech API
       recognition = new SpeechRecognitionAPI();
       recognition.continuous = true;
       recognition.interimResults = false;
