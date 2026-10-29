@@ -327,7 +327,7 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
   <div class="libleft">
     <div id="info"></div>
     <span onclick="location.reload()" style="cursor: pointer;" title="Reload">👨‍💻</span> <a href="http://cwmoriarty.com">cwmoriarty.com</a>
-    <div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">Built 2026-10-29 03:46 UTC</div>
+    <div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">Built 2026-10-29 03:49 UTC</div>
   </div>
 
   <script>
@@ -531,9 +531,10 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
 
     // Profanity Filter: Fast local kid-safe check + Vector API fallback
     const LOCAL_PROFANITY = new Set([
-      'poop', 'poopy', 'poopoo', 'pee', 'peeing', 'crap', 'crappy',
-      'damn', 'hell', 'shit', 'fuck', 'fucking', 'bitch', 'ass',
-      'asshole', 'bastard', 'dick', 'piss', 'cunt'
+      'poop', 'poopy', 'poopoo', 'pee', 'peeing', 'fart', 'farting',
+      'crap', 'crappy', 'butt', 'boob', 'boobs', 'damn', 'hell',
+      'shit', 'fuck', 'fucking', 'bitch', 'ass', 'asshole', 'bastard',
+      'dick', 'piss', 'cunt'
     ]);
 
     async function checkIsProfane(text) {
@@ -604,12 +605,12 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       // Profanity verification: flagged words turn to "NO"
       const isBad = await checkIsProfane(word);
       if (isBad) {
-        word = "NO";
         setDisplayMode(false);
         upperEl.textContent = "NO";
         lowerEl.textContent = "no";
         resizeAll();
-        TTS("NO is spelled N, O.");
+        setIcon('🙊', "🙊 Uh oh! We don't spell that word!");
+        TTS("Uh oh! We don't spell that word.");
         return;
       }
 
