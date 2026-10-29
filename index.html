@@ -32,34 +32,86 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       color: black;
     }
 
+    /* Display Area: Handles Full-Center (no-split) vs Left/Right (has-split) */
+    #displayArea {
+      position: absolute;
+      top: 4%;
+      left: 0;
+      width: 100%;
+      height: 56%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 4vw;
+      transition: all 0.25s ease;
+    }
+
+    #displayArea.no-split {
+      flex-direction: column;
+    }
+
+    #displayArea.no-split #wordContainer {
+      width: 100%;
+      text-align: center;
+    }
+
+    #displayArea.no-split #pictureContainer {
+      display: none;
+    }
+
+    #displayArea.has-split {
+      flex-direction: row;
+    }
+
+    #displayArea.has-split #wordContainer {
+      width: 50%;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+    }
+
+    #displayArea.has-split #pictureContainer {
+      width: 50%;
+      height: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
     #resultUpper {
       font-family: "Open Sans", sans-serif;
-      font-size: 15vw;
-      width: 100%;
-      top: 8%;
-      position: absolute;
-      text-align: center;
+      font-weight: 700;
       line-height: 1.1;
       word-break: break-word;
       user-select: none;
+      margin-bottom: 2vh;
     }
 
     #resultLower {
       font-family: "Open Sans", sans-serif;
-      font-size: 13vw;
-      width: 100%;
-      top: 36%;
-      position: absolute;
-      text-align: center;
-      color: darkblue;
+      font-weight: 400;
       line-height: 1.1;
+      color: darkblue;
       word-break: break-word;
       user-select: none;
     }
 
+    #wordImage {
+      max-width: 80%;
+      max-height: 80%;
+      width: clamp(140px, 28vw, 320px);
+      height: clamp(140px, 28vw, 320px);
+      object-fit: contain;
+      filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.08));
+      transition: opacity 0.25s ease, transform 0.25s ease;
+    }
+
+    /* Lower Controls Area */
     .centered {
       position: absolute;
-      top: 65%;
+      top: 66%;
       left: 50%;
       transform: translate(-50%, 0%);
       width: 90%;
@@ -109,12 +161,8 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
     }
 
     @keyframes gentle-pulse {
-      0%, 100% {
-        transform: scale(1);
-      }
-      50% {
-        transform: scale(1.1);
-      }
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.1); }
     }
 
     #promptText {
@@ -126,14 +174,8 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
 
     @media (max-width: 768px) {
       .centered {
-        top: 63%;
+        top: 64%;
         width: 94%;
-      }
-      #resultUpper {
-        top: 6%;
-      }
-      #resultLower {
-        top: 34%;
       }
     }
 
@@ -153,8 +195,16 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
 </head>
 
 <body>
-  <div id="resultUpper">WONDERFUL</div>
-  <div id="resultLower">wonderful</div>
+  <!-- Split display: Left = Word, Right = Icon. If no icon: Word is Centered (no split) -->
+  <div id="displayArea" class="no-split">
+    <div id="wordContainer">
+      <div id="resultUpper">WONDERFUL</div>
+      <div id="resultLower">wonderful</div>
+    </div>
+    <div id="pictureContainer">
+      <img id="wordImage" alt="" style="display: none;">
+    </div>
+  </div>
 
   <div class="centered">
     <div id="iconContainer">
@@ -167,7 +217,7 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
   <div class="libleft">
     <div id="info"></div>
     <span onclick="location.reload()" style="cursor: pointer;" title="Reload">👨‍💻</span> <a href="http://cwmoriarty.com">cwmoriarty.com</a>
-    <div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">Built 2026-10-29 03:08 UTC</div>
+    <div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">Built 2026-10-29 03:12 UTC</div>
   </div>
 
   <script>
@@ -180,36 +230,81 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
     let recognition = null;
     let voices = [];
 
+    const displayArea = document.getElementById('displayArea');
+    const wordImage = document.getElementById('wordImage');
     const speechToggle = document.getElementById('speechToggle');
     const promptText = document.getElementById('promptText');
     const upperEl = document.getElementById('resultUpper');
     const lowerEl = document.getElementById('resultLower');
     const infoEl = document.getElementById('info');
 
-    // Font resizing
-    function resizeElementTextToWindow(element) {
+    // Dynamic Font Resizing based on available layout width
+    function resizeElementText(element, targetWidth) {
       if (!element) return;
-      const word = element.textContent || "WONDERFUL";
+      const text = element.textContent || "";
+      if (!text) return;
+
       const canvas = document.createElement('canvas');
       const context = canvas.getContext('2d');
       const style = window.getComputedStyle(element);
       const baseFontSize = 100;
       context.font = `${baseFontSize}px ${style.fontFamily || 'Open Sans, sans-serif'}`;
-      const textWidth = context.measureText(word).width || 1;
-      const targetWidth = window.innerWidth * 0.88;
+      const textWidth = context.measureText(text).width || 1;
       const scaleFactor = targetWidth / textWidth;
-      const newFontSize = Math.min(baseFontSize * scaleFactor, window.innerHeight * 0.22);
+      const newFontSize = Math.min(baseFontSize * scaleFactor, window.innerHeight * 0.20);
       element.style.fontSize = `${newFontSize}px`;
     }
 
     function resizeAll() {
-      resizeElementTextToWindow(upperEl);
-      resizeElementTextToWindow(lowerEl);
+      const isSplit = displayArea.classList.contains('has-split');
+      const targetWidth = isSplit ? (window.innerWidth * 0.44) : (window.innerWidth * 0.88);
+      resizeElementText(upperEl, targetWidth);
+      resizeElementText(lowerEl, targetWidth);
     }
 
     // Run initially and on resize
     resizeAll();
     window.addEventListener('resize', resizeAll);
+
+    // Layout Split Controller
+    function setDisplayMode(hasIcon, imageUrl) {
+      if (hasIcon && imageUrl) {
+        wordImage.src = imageUrl;
+        wordImage.style.display = 'block';
+        displayArea.classList.remove('no-split');
+        displayArea.classList.add('has-split');
+      } else {
+        wordImage.src = '';
+        wordImage.style.display = 'none';
+        displayArea.classList.remove('has-split');
+        displayArea.classList.add('no-split');
+      }
+      resizeAll();
+    }
+
+    // Fallback if image fails to load
+    wordImage.onerror = () => {
+      console.warn("Failed to render icon image, reverting to center word layout");
+      setDisplayMode(false);
+    };
+
+    // Icon search from Iconify API (Open, CORS-friendly icon finder)
+    async function fetchIcon(word) {
+      try {
+        const query = encodeURIComponent(word.toLowerCase().trim());
+        const res = await fetch(`https://api.iconify.design/search?query=${query}&limit=1`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.icons && data.icons.length > 0) {
+            const [prefix, name] = data.icons[0].split(':');
+            return `https://api.iconify.design/${prefix}/${name}.svg?color=%231a73e8`;
+          }
+        }
+      } catch (err) {
+        console.warn("Icon search network error:", err);
+      }
+      return null;
+    }
 
     // Text-to-Speech
     function loadVoices() {
@@ -224,67 +319,64 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
     }
 
     function TTS(text) {
-      if (!('speechSynthesis' in window)) {
-        console.warn('Speech synthesis not supported in this browser.');
-        return;
-      }
+      if (!('speechSynthesis' in window)) return;
 
-      window.speechSynthesis.cancel(); // Stop any pending speech
-
+      window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
       if (!voices.length) {
         voices = window.speechSynthesis.getVoices();
       }
 
       const moiraVoice = voices.find(v => v.name && v.name.includes('Moira'));
-      if (moiraVoice) {
-        utterance.voice = moiraVoice;
-      }
+      if (moiraVoice) utterance.voice = moiraVoice;
 
       utterance.volume = 0.75;
       utterance.rate = 0.75;
       utterance.pitch = 1.25;
 
-      utterance.onstart = () => {
-        isSpeaking = true;
-      };
-
+      utterance.onstart = () => { isSpeaking = true; };
       utterance.onend = () => {
         isSpeaking = false;
-        // Resume listening safely after TTS completes
-        if (isSpeechEnabled && !isRecognizing) {
-          startRecognition();
-        }
+        if (isSpeechEnabled && !isRecognizing) startRecognition();
       };
-
-      utterance.onerror = (e) => {
-        console.warn('TTS error:', e);
+      utterance.onerror = () => {
         isSpeaking = false;
-        if (isSpeechEnabled && !isRecognizing) {
-          startRecognition();
-        }
+        if (isSpeechEnabled && !isRecognizing) startRecognition();
       };
 
       console.log("Speaking: " + text);
       window.speechSynthesis.speak(utterance);
     }
 
-    // Profanity Filter
-    async function checkProfanity(text) {
+    // Profanity Filter: Fast local kid-safe check + Vector API fallback
+    const LOCAL_PROFANITY = new Set([
+      'poop', 'poopy', 'poopoo', 'pee', 'peeing', 'crap', 'crappy',
+      'damn', 'hell', 'shit', 'fuck', 'fucking', 'bitch', 'ass',
+      'asshole', 'bastard', 'dick', 'piss', 'cunt'
+    ]);
+
+    async function checkIsProfane(text) {
+      const clean = text.toLowerCase().trim();
+      if (LOCAL_PROFANITY.has(clean)) return true;
+
       try {
-        const response = await fetch('https://vector.profanity.dev', {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 1200);
+        const res = await fetch('https://vector.profanity.dev', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: "Spell " + text })
+          body: JSON.stringify({ message: "Spell " + clean }),
+          signal: controller.signal
         });
-        if (response.ok) {
-          const data = await response.json();
-          return data.isProfanity ? "LANGUAGE" : text;
+        clearTimeout(timeout);
+        if (res.ok) {
+          const data = await res.json();
+          return !!data.isProfanity;
         }
       } catch (err) {
-        console.warn('Profanity API lookup failed:', err);
+        console.warn('Profanity API lookup error:', err);
       }
-      return text;
+      return false;
     }
 
     // Speech UI & Icon Management
@@ -318,9 +410,7 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
 
         // Return to 🐵 after 2.5 seconds if speech mode is still enabled
         resetIconTimer = setTimeout(() => {
-          if (isSpeechEnabled) {
-            setIcon('🐵');
-          }
+          if (isSpeechEnabled) setIcon('🐵');
         }, 2500);
       }
     }
@@ -328,15 +418,11 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
     // Speech Mode Toggle
     function toggleSpeechMode() {
       if (isSpeechEnabled) {
-        // Toggle OFF
         isSpeechEnabled = false;
         setIcon('🙊');
         stopRecognition();
-        if ('speechSynthesis' in window) {
-          window.speechSynthesis.cancel();
-        }
+        if ('speechSynthesis' in window) window.speechSynthesis.cancel();
       } else {
-        // Toggle ON
         isSpeechEnabled = true;
         setIcon('🐵');
         infoEl.textContent = '';
@@ -348,19 +434,31 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
     async function handleSpellingMatch(rawWord) {
       let word = rawWord.trim();
 
-      // Custom replacement list
+      // Replacement list for custom pronunciations/names
       const lower = word.toLowerCase();
-      if (lower === "eva") { word = "aoife"; }
-      else if (lower === "megan") { word = "meaghan"; }
-      else if (lower === "poopy") { word = "NO"; }
+      if (lower === "eva") word = "aoife";
+      else if (lower === "megan") word = "meaghan";
 
-      // Profanity verification
-      word = await checkProfanity(word);
+      // Profanity verification: flagged words turn to "NO"
+      const isBad = await checkIsProfane(word);
+      if (isBad) {
+        word = "NO";
+        setDisplayMode(false); // No picture for flagged words, centered "NO"
+        upperEl.textContent = "NO";
+        lowerEl.textContent = "no";
+        resizeAll();
+        TTS("NO is spelled N, O.");
+        return;
+      }
 
-      // Display spelling
+      // Display spelling immediately
       upperEl.textContent = word.toUpperCase();
       lowerEl.textContent = word.toLowerCase();
       resizeAll();
+
+      // Search for picture icon
+      const iconUrl = await fetchIcon(word);
+      setDisplayMode(!!iconUrl, iconUrl);
 
       // Pronounce letter-by-letter with slight pauses
       const spelledOut = word.split('').join(', ');
@@ -385,19 +483,11 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
         console.log("Speech recognition active");
       };
 
-      recognition.onspeechstart = () => {
-        speechDetected = true;
-      };
-
-      recognition.onsoundstart = () => {
-        speechDetected = true;
-      };
+      recognition.onspeechstart = () => { speechDetected = true; };
+      recognition.onsoundstart = () => { speechDetected = true; };
 
       recognition.onresult = (event) => {
-        if (isSpeaking) {
-          // Ignore microphone audio while TTS is actively speaking
-          return;
-        }
+        if (isSpeaking) return;
 
         const lastResult = event.results[event.results.length - 1];
         if (!lastResult || !lastResult[0]) return;
@@ -409,12 +499,10 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
         const match = transcript.match(regex);
 
         if (match && match[1]) {
-          // Matched!
           speechDetected = false;
           setIcon('🐵');
           handleSpellingMatch(match[1]);
         } else {
-          // Stream of audio came in but did NOT match "how do you spell ____"
           speechDetected = false;
           console.log("Speech did not match spelling command:", transcript);
           setIcon('🙉');
@@ -442,13 +530,11 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
         isRecognizing = false;
         console.log("Speech recognition ended");
 
-        // If speech was detected in this session but produced no match result
         if (speechDetected && !isSpeaking && isSpeechEnabled) {
           speechDetected = false;
           setIcon('🙉');
         }
 
-        // Automatically restart if speech mode remains enabled
         if (isSpeechEnabled && !isSpeaking) {
           setTimeout(() => {
             if (isSpeechEnabled && !isRecognizing && !isSpeaking) {
@@ -458,7 +544,6 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
         }
       };
 
-      // Start recognition initially
       startRecognition();
     }
 
@@ -467,7 +552,6 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       try {
         recognition.start();
       } catch (err) {
-        // If already started or browser is busy, ignore
         console.warn("startRecognition caught error:", err);
       }
     }
