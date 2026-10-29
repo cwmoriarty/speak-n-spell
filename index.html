@@ -1,103 +1,253 @@
+<!-- 
+1/1/2026 - Dev session with Aoife. Current state is that TTS works great on Thorium/Chrome!
+
+Aoife FR: button you press and there's different pictures of fruit. you press one that you like and it prints a coloring page wiht the word on the bottom.
+-->
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Speak N Spell 0.1a</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Comic+Neue:ital,wght@0,300;0,400;0,700;1,300;1,400;1,700&family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap"
+    rel="stylesheet">
+  <!-- <script src="https://code.iconify.design/iconify-icon/1.0.7/iconify-icon.min.js"></script> -->
+  <style type="text/css">
+    body {
+      font-family: Helvetica, Geneva, sans-serif;
+      background-color: white;
+    }
+
+    a {
+      color: black;
+    }
+
+    #resultUpper {
+      font-family: "Open Sans";
+      font-size: 15vw;
+      width: 100%;
+      top: 10%;
+      position: absolute;
+      text-align: center;
+    }
+
+    #resultLower {
+      font-family: "Open Sans";
+      font-size: 13vw;
+      width: 100%;
+      top: 40%;
+      position: absolute;
+      text-align: center;
+      color: darkblue;
+    }
+
+    .centered {
+      position: absolute;
+      top: 75%;
+      left: 50%;
+      transform: translate(-50%, 0%);
+      width: 50%;
+      height: 30%;
+      font-size: calc(1vw + 1vh);
+      /*border: 1px solid black;*/
+    }
+
+    .centered h1 {
+      font-size: calc(2vw + 2vh);
+    }
+
+    @media (max-width: 768px) {
+      .centered {
+        width: 50%;
+        height: 50%;
+        font-size: calc(2vw + 2vh);
+      }
+    }
+
+    .libleft {
+      font-size: large;
+      position: fixed;
+      left: 10px;
+      bottom: 10px;
+    }
+  </style>
+</head>
 
 <body>
   <div class="centered">
-  <h1>Speak N Spell Alpha 🗣️🔤</h1>
+    <h1>Speak N Spell 0.1a</h1>
     Ask "How do you spell ______"?
-</div>       
+  </div>
 
-    <div id="resultUpper">WONDERFUL</div>
-    <div id="resultLower">wonderful</div>
+  <div id="iconContainer"></div>
+  <div id="resultUpper">WONDERFUL</div>
+  <div id="resultLower">wonderful</div>
 
   <div class="libleft" id="info">
-   👨‍💻 <a href="http://cwmoriarty.com">cwmoriarty.com</a><br><br>
-   </div>
+    <span onclick="location.reload()" style="cursor: pointer;" title="Reload">👨‍💻</span> <a href="http://cwmoriarty.com">cwmoriarty.com</a>
+    <div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">Built 2026-10-29 03:02 UTC</div>
+  </div>
 
+  <!-- Auto refresh every 15 seconds-->
+  <script>
+    //setInterval(() => location.reload(), 15000);
+  </script>
+
+  <script>
+    function resizeElementTextToWindow(element) {
+      const word = element.textContent;
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+      const style = window.getComputedStyle(element);
+      const fontSize = parseFloat(style.fontSize);
+      const font = `${fontSize}px ${style.fontFamily}`;
+      context.font = font;
+      const textWidth = context.measureText(word).width;
+      const windowWidth = window.innerWidth * 0.9;
+      const scaleFactor = windowWidth / textWidth;
+      const newFontSize = fontSize * scaleFactor;
+      element.style.fontSize = `${newFontSize}px`;
+      console.log(fontSize);
+    }
+
+    const element = document.getElementById('resultUpper');
+
+    // Run initially
+    resizeElementTextToWindow(element);
+
+    // Adjust on window resize
+    window.onresize = function () {
+      resizeElementTextToWindow(element);
+    };
+
+    function TTS(text) {
+      if ('speechSynthesis' in window) {
+        const utterance = new SpeechSynthesisUtterance(text);
+        const voices = speechSynthesis.getVoices();
+        console.log("speaking..." + text);
+
+        // Select the Moira voice
+        const moiraVoice = voices.find(voice => voice.name.includes('Moira'));
+
+        utterance.volume = 0.75;
+        utterance.rate = 0.75;
+        utterance.pitch = 1.25;
+
+        if (moiraVoice) {
+          utterance.voice = moiraVoice;
+          console.warn('Moira was found.');
+        } else {
+          console.warn('Moira voice not found. Using default voice.');
+        }
+        console.log("Speaking..." + text);
+        window.speechSynthesis.speak(utterance);
+      } else {
+        console.error('Speech synthesis not supported in this browser.');
+      }
+    }
+
+    // https://api.streamlinehq.com/v5/search/global-ungrouped/counters?type=freebies&filter=free&query=popsicle
+
+    function profaneExistance(text) {
+      const apiUrl = 'https://vector.profanity.dev';
+      const xhr = new XMLHttpRequest();
+      const checktext = "Spell " + text; // API needs at least two words
+
+      xhr.open('POST', apiUrl, false); // Set the third parameter to 'false' for a synchronous request
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.send(JSON.stringify({ message: checktext }));
+
+      if (xhr.status === 200) {
+        const data = JSON.parse(xhr.responseText);
+        return data.isProfanity ? "LANGUAGE" : text;
+      } else {
+        console.error('Error checking profanity:', xhr.statusText);
+        return text; // Return the original text in case of an error
+      }
+    }
+
+    if ('webkitSpeechRecognition' in window) {
+      console.log("webkitSpeechRecognition is supported");
+      recognition = new webkitSpeechRecognition();
+      //speechRecognitionList = new webkitSpeechGrammarList();
+    } else if ('SpeechRecognition' in window) {
+      console.log("SpeechRecognition API is supported");
+      recognition = new SpeechRecognition();
+      //speechRecognitionList = new SpeechGrammarList();
+    } else {
+      document.getElementById('info').textContent = "⚠️Speech Recognition not supported in this browser.";
+    }
+
+    //Add custom words.
+    //grammar = '#JSGF V1.0; grammar names; public <name> = Aoife | Meaghan | Mary;';
+    //speechRecognitionList.addFromString(grammar, 1);
+    //recognition.grammars = speechRecognitionList;
+
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.lang = 'en-US';
+
+    recognition.onresult = (event) => {
+      const transcript = event.results[event.results.length - 1][0].transcript.trim();
+      const regex = /how do you spell\s+(\w+)/i;
+      const match = transcript.match(regex);
+
+      if (match) {
+        let word = match[1];
+
+        word = profaneExistance(word);
+        console.log(word.toLowerCase());
+
+        //todo: Allow users to keep a replacement list
+        if (word.toLowerCase() === "eva") { word = "aoife"; }
+        if (word.toLowerCase() === "megan") { word = "meaghan"; }
+        if (word.toLowerCase() === "poopy") { word = "NO"; } //should be flagged by profanity check
+
+        console.log(word + " is spelled " + word.split('').join(' '));
+
+        //Spelling
+        document.getElementById('resultUpper').textContent = word.toUpperCase();
+        document.getElementById('resultLower').textContent = word.toLowerCase();
+
+        //Speech
+        TTS(word + " is spelled " + word.split('').join(','));
+
+        //Icon
+        let url = "https://api.iconfinder.com/v4/icons/search?count=1&query=" + word;
+
+        fetch(url)
+          .then((response) => response.json())
+          .then((data) => {
+            // Get the URL of the first icon in the results
+            let iconUrl = data.icons[0].raster_sizes[0].formats[0].preview_url;
+
+            // Create an <img> element and set its src to the icon URL
+            let img = document.createElement('img');
+            img.src = iconUrl;
+
+            // Append the image to the page
+            document.body.appendChild(img);
+          })
+          .catch((error) => {
+            console.error('Error fetching icon:', error);
+          });
+      }
+    };
+
+    recognition.onerror = (event) => {
+      console.error('Speech recognition error', event);
+    };
+
+    recognition.onend = () => {
+      recognition.start();
+    };
+
+    recognition.start();
+  </script>
 </body>
 
-
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Comic+Neue:ital,wght@0,300;0,400;0,700;1,300;1,400;1,700&family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap" rel="stylesheet">
-
-<script>
-   // document.getElementById('result').textContent="TESTES"
-    if ('webkitSpeechRecognition' in window) {
-        recognition = new webkitSpeechRecognition();
-        } else if ('SpeechRecognition' in window) {
-        recognition = new SpeechRecognition();
-        } else {
-        document.getElementById('info').textContent = "⚠️Speech Recognition not supported in this browser.";
-        }
-    
-        recognition.continuous = true;
-        recognition.interimResults = false;
-        recognition.lang = 'en-US';
-
-        recognition.onresult = (event) => {
-            const transcript = event.results[event.results.length - 1][0].transcript.trim();
-            const regex = /how do you spell\s+(\w+)/i;
-            const match = transcript.match(regex);
-
-            if (match) {
-                document.getElementById('resultUpper').textContent =  match[1].toUpperCase();
-                document.getElementById('resultLower').textContent =  match[1].toLowerCase();
-            }
-        };
-
-        recognition.onerror = (event) => {
-            console.error('Speech recognition error', event);
-        };
-
-        recognition.onend = () => {
-            recognition.start();
-        };
-
-        recognition.start();
-  
-</script>
-
-
-
-
-<style type="text/css">
-    body { font-family: Helvetica, Geneva, sans-serif; }
-    a { color: black; }
-   
-#resultUpper { font-family: "Open Sans"; font-size: 15vw; width: 100%; top: 10%; position: absolute; text-align: center;}
-#resultLower { font-family: "Open Sans"; font-size: 13vw; width: 100%; top: 40%; position: absolute; text-align: center; color:darkblue;}
-
-
-
-.centered {
-  position: absolute;
-  top: 75%;
-  left: 50%;
-  transform: translate(-50%, 0%);
-  width: 50%;
-  height: 30%;
-  font-size: calc(1vw + 1vh);
-  /*border: 1px solid black;*/
-}
-.centered h1
-{ 
-  font-size: calc(2vw + 2vh);
-}
-
-
-@media (max-width: 768px) {
-  .centered {
-    width: 50%;
-    height: 50%;
-    font-size: calc(2vw + 2vh);
-  }
-}
-
-.libleft {
-        font-size: large;
-          position: fixed;
-          left:10; 
-          bottom:10;
-        }
-        </style>
-
-
+</html>
