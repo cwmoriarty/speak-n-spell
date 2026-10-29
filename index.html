@@ -157,46 +157,7 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       min-height: 24px;
     }
 
-    /* Fallback input for keyboard typing */
-    #textFallbackForm {
-      margin-top: 10px;
-      display: none;
-      justify-content: center;
-      align-items: center;
-      gap: 8px;
-    }
 
-    #manualWordInput {
-      font-size: 15px;
-      padding: 7px 14px;
-      border: 1.5px solid #bbb;
-      border-radius: 20px;
-      outline: none;
-      width: 65%;
-      max-width: 250px;
-      font-family: inherit;
-      transition: border-color 0.2s;
-    }
-
-    #manualWordInput:focus {
-      border-color: #1a73e8;
-    }
-
-    #manualSpellBtn {
-      font-size: 14px;
-      padding: 7px 16px;
-      background: #1a73e8;
-      color: white;
-      border: none;
-      border-radius: 20px;
-      cursor: pointer;
-      font-weight: 600;
-      transition: background 0.15s;
-    }
-
-    #manualSpellBtn:hover {
-      background: #1557b0;
-    }
 
     /* Loading Overlay for Firefox Engine initialization */
     #loadingOverlay {
@@ -236,11 +197,11 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
     }
 
     #progressBar {
-      width: 5%;
+      width: 0%;
       height: 100%;
       background: #1a73e8;
       border-radius: 4px;
-      transition: width 0.2s ease;
+      transition: width 0.25s ease-out;
     }
 
     #startMicBtn {
@@ -295,7 +256,6 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       </div>
       <div id="loadingSubtext" style="font-size: 11px; color: #888;">Downloads once and caches locally (~39MB)</div>
       <button id="startMicBtn" onclick="enableFirefoxMic()">🎙️ Start Listening</button>
-      <button onclick="skipLoading()" style="background:none; border:none; color:#1a73e8; font-size:12px; margin-top:12px; cursor:pointer; text-decoration:underline; display:block; width:100%;">Skip &amp; Type Word</button>
     </div>
   </div>
 
@@ -316,18 +276,12 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
     </div>
     <h1>Speak N Spell 0.1a</h1>
     <div id="promptText">Ask "How do you spell ______"?</div>
-
-    <!-- Fallback Text Input -->
-    <form id="textFallbackForm" onsubmit="handleManualSpell(event)">
-      <input type="text" id="manualWordInput" placeholder="Type a word to spell..." autocomplete="off" autocapitalize="none" />
-      <button type="submit" id="manualSpellBtn">Spell</button>
-    </form>
   </div>
 
   <div class="libleft">
     <div id="info"></div>
     <span onclick="location.reload()" style="cursor: pointer;" title="Reload">👨‍💻</span> <a href="http://cwmoriarty.com">cwmoriarty.com</a>
-    <div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">Built 2026-10-29 03:49 UTC</div>
+    <div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">Built 2026-10-29 03:55 UTC</div>
   </div>
 
   <script>
@@ -356,8 +310,6 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
     const wordImage = document.getElementById('wordImage');
     const speechToggle = document.getElementById('speechToggle');
     const promptText = document.getElementById('promptText');
-    const textFallbackForm = document.getElementById('textFallbackForm');
-    const manualWordInput = document.getElementById('manualWordInput');
     const loadingOverlay = document.getElementById('loadingOverlay');
     const loadingStatus = document.getElementById('loadingStatus');
     const progressBar = document.getElementById('progressBar');
@@ -628,22 +580,6 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       TTS(word + " is spelled " + spelledOut);
     }
 
-    // Manual Text Input Fallback
-    function handleManualSpell(e) {
-      if (e) e.preventDefault();
-      const val = (manualWordInput.value || "").trim();
-      if (!val) return;
-      manualWordInput.value = "";
-      manualWordInput.blur();
-      handleSpellingMatch(val);
-    }
-
-    function skipLoading() {
-      if (loadingOverlay) loadingOverlay.style.display = 'none';
-      if (textFallbackForm) textFallbackForm.style.display = 'flex';
-      if (manualWordInput) manualWordInput.focus();
-    }
-
     function enableFirefoxMic() {
       if (loadingOverlay) loadingOverlay.style.display = 'none';
       startFirefoxContinuousListening();
@@ -747,7 +683,6 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       } catch (err) {
         console.warn("Firefox continuous mic setup failed:", err);
         infoEl.textContent = "⚠️ Mic permission needed. Click 🐵 to allow.";
-        textFallbackForm.style.display = 'flex';
       }
     }
 
@@ -794,8 +729,9 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
 
     // Initialize Firefox Whisper Engine by default
     async function initFirefoxWhisperEngine() {
-      textFallbackForm.style.display = 'flex';
       loadingOverlay.style.display = 'flex';
+      progressBar.style.width = '0%';
+      loadingStatus.textContent = 'Connecting to speech model...';
 
       try {
         const { pipeline, env } = await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2');
@@ -804,22 +740,42 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
           env.backends.onnx.wasm.numThreads = 1; // Prevent hanging on missing SharedArrayBuffer in Firefox
         }
 
+        // Monotonic aggregate progress tracker across all model files (~41.8 MB total)
+        const fileProgress = {};
+        const ESTIMATED_TOTAL_BYTES = 41800000;
+        let smoothedPct = 0;
+
         whisperPipeline = await pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny.en', {
           progress_callback: (item) => {
-            if (item.status === 'progress' && item.progress) {
-              const pct = Math.round(item.progress);
-              progressBar.style.width = pct + '%';
-              loadingStatus.textContent = `Downloading speech engine (${pct}%)...`;
+            if (item.status === 'initiate') {
+              if (smoothedPct === 0) {
+                loadingStatus.textContent = 'Connecting to speech model...';
+              }
+            } else if (item.status === 'progress') {
+              if (item.file && typeof item.loaded === 'number') {
+                fileProgress[item.file] = item.loaded;
+                const totalLoaded = Object.values(fileProgress).reduce((acc, bytes) => acc + bytes, 0);
+                const calcPct = Math.min(98, Math.round((totalLoaded / ESTIMATED_TOTAL_BYTES) * 100));
+                // Strictly monotonic: never jumps backwards
+                smoothedPct = Math.max(smoothedPct, calcPct);
+                progressBar.style.width = smoothedPct + '%';
+                loadingStatus.textContent = `Downloading speech engine (${smoothedPct}%)...`;
+              }
             } else if (item.status === 'done') {
-              loadingStatus.textContent = 'Speech engine ready!';
-              progressBar.style.width = '100%';
+              if (item.file && item.total) {
+                fileProgress[item.file] = item.total;
+              }
+            } else if (item.status === 'ready') {
+              smoothedPct = Math.max(smoothedPct, 99);
+              progressBar.style.width = smoothedPct + '%';
+              loadingStatus.textContent = 'Initializing engine...';
             }
           }
         });
 
-        // Finished downloading/loading model
-        loadingStatus.textContent = 'Ready!';
+        // Finished downloading and initializing model
         progressBar.style.width = '100%';
+        loadingStatus.textContent = 'Speech engine ready!';
 
         // If mic permission already exists, start immediately, else prompt user to activate
         startMicBtn.style.display = 'inline-block';
@@ -833,8 +789,8 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       } catch (err) {
         console.error("Failed to load Whisper in Firefox:", err);
         loadingOverlay.style.display = 'none';
-        promptText.textContent = 'Ask "How do you spell ______" or type below:';
-        infoEl.textContent = 'Firefox: Type words below or click 🐵 to retry mic.';
+        promptText.textContent = 'Speech engine error. Click 🐵 to retry.';
+        infoEl.textContent = '⚠️ Could not load speech engine. Check internet & click 🐵 to retry.';
       }
     }
 
@@ -901,8 +857,7 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
           isSpeechEnabled = false;
           isRecognizing = false;
           setIcon('🙊');
-          infoEl.textContent = "⚠️ Microphone access blocked. Click 🙊 or type below.";
-          textFallbackForm.style.display = 'flex';
+          infoEl.textContent = "⚠️ Microphone access blocked. Please allow mic in browser settings and click 🙊.";
         }
       };
 
