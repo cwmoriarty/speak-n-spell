@@ -89,7 +89,8 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       font-weight: 700;
       line-height: 1.1;
       word-break: break-word;
-      user-select: none;
+      user-select: text;
+      -webkit-user-select: text;
       margin-bottom: 2vh;
     }
 
@@ -99,7 +100,8 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       line-height: 1.1;
       color: darkblue;
       word-break: break-word;
-      user-select: none;
+      user-select: text;
+      -webkit-user-select: text;
     }
 
     /* Crisp line art for children to draw/color */
@@ -281,7 +283,7 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
   <div class="libleft">
     <div id="info"></div>
     <span onclick="location.reload()" style="cursor: pointer;" title="Reload">👨‍💻</span> <a href="http://cwmoriarty.com">cwmoriarty.com</a>
-    <div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">Built 2026-10-29 03:55 UTC</div>
+    <div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">Built 2026-10-29 04:10 UTC</div>
   </div>
 
   <script>
@@ -304,6 +306,7 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
     let isProcessingFirefox = false;
     let isSpeakingVoice = false;
     let speechBuffer = [];
+    let preSpeechRingBuffer = [];
     let silenceBuffers = 0;
 
     const displayArea = document.getElementById('displayArea');
@@ -590,6 +593,10 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       if (isSpeechEnabled) {
         isSpeechEnabled = false;
         setIcon('🙊');
+        preSpeechRingBuffer = [];
+        speechBuffer = [];
+        isSpeakingVoice = false;
+        silenceBuffers = 0;
         if (recognition) stopRecognition();
         if ('speechSynthesis' in window) window.speechSynthesis.cancel();
       } else {
@@ -602,6 +609,48 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
           startFirefoxContinuousListening();
         }
       }
+    }
+
+    // Robust extraction of spelling target word from natural speech transcript
+    function extractTargetWord(transcript) {
+      if (!transcript || typeof transcript !== 'string') return null;
+      // Strip punctuation (quotes, commas, periods, question marks) while preserving words
+      const clean = transcript
+        .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?"'\x27]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (!clean) return null;
+
+      const stopWords = new Set([
+        'the', 'a', 'an', 'word', 'it', 'that', 'this', 'me', 'you',
+        'how', 'to', 'do', 'spell', 'spelled', 'spelling', 'what', 'is', 'for'
+      ]);
+
+      // Pattern 1: Command prefix + optional (the/a/an/the word) + TARGET WORD
+      // Matches "how do you spell chicken", "how to spell chicken", "can you spell chicken", "spell chicken", "please spell chicken"
+      const prefixRegex = /(?:how\s+(?:do\s+you|to)\s+spell|can\s+you\s+spell|please\s+spell|\bspell)\s+(?:the\s+word\s+|the\s+|a\s+|an\s+)?([a-zA-Z\-]+)/i;
+      const match = clean.match(prefixRegex);
+      if (match && match[1]) {
+        const candidate = match[1].toLowerCase();
+        if (!stopWords.has(candidate)) return candidate;
+      }
+
+      // Pattern 2: Suffix form e.g. "how is chicken spelled" or "chicken how do you spell"
+      const suffixRegex = /(?:how\s+is\s+)?([a-zA-Z\-]+)\s+(?:spelled|how\s+do\s+you\s+spell)/i;
+      const match2 = clean.match(suffixRegex);
+      if (match2 && match2[1]) {
+        const candidate = match2[1].toLowerCase();
+        if (!stopWords.has(candidate)) return candidate;
+      }
+
+      // Pattern 3: Exactly ONE isolated single word spoken (length >= 2)
+      const words = clean.split(/\s+/).filter(Boolean);
+      if (words.length === 1 && words[0].length >= 2) {
+        const candidate = words[0].toLowerCase();
+        if (!stopWords.has(candidate)) return candidate;
+      }
+
+      return null;
     }
 
     // Helper: concatenate float32 audio chunks
@@ -617,13 +666,36 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       return flat;
     }
 
+    // Downsample or upsample any browser AudioContext sample rate to exactly 16,000 Hz for Whisper
+    function resampleTo16k(audioData, origSampleRate) {
+      if (!origSampleRate || origSampleRate === 16000) return audioData;
+      const ratio = origSampleRate / 16000;
+      const newLength = Math.round(audioData.length / ratio);
+      const result = new Float32Array(newLength);
+      let offsetResult = 0;
+      let offsetBuffer = 0;
+      while (offsetResult < result.length) {
+        const nextOffsetBuffer = Math.round((offsetResult + 1) * ratio);
+        let accum = 0;
+        let count = 0;
+        for (let i = offsetBuffer; i < nextOffsetBuffer && i < audioData.length; i++) {
+          accum += audioData[i];
+          count++;
+        }
+        result[offsetResult] = count > 0 ? accum / count : audioData[offsetBuffer];
+        offsetResult++;
+        offsetBuffer = nextOffsetBuffer;
+      }
+      return result;
+    }
+
     // Firefox continuous Voice Activity Detection (VAD)
     async function startFirefoxContinuousListening() {
       if (!isSpeechEnabled || isListeningFirefox) return;
 
       try {
         if (!audioContext) {
-          audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+          audioContext = new (window.AudioContext || window.webkitAudioContext)();
         }
         if (audioContext.state === 'suspended') {
           await audioContext.resume();
@@ -638,6 +710,10 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
 
         audioProcessor.onaudioprocess = (e) => {
           if (!isSpeechEnabled || isSpeaking || isProcessingFirefox) {
+            preSpeechRingBuffer = [];
+            speechBuffer = [];
+            isSpeakingVoice = false;
+            silenceBuffers = 0;
             return;
           }
 
@@ -650,27 +726,45 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
           }
           const rms = Math.sqrt(sumSquares / channel.length);
 
-          if (rms > 0.016) {
-            // Voice energy detected
-            isSpeakingVoice = true;
+          // Sensitive voice threshold (~0.009) to detect quiet voices & initial aspirates
+          if (rms > 0.009) {
+            if (!isSpeakingVoice) {
+              isSpeakingVoice = true;
+              silenceBuffers = 0;
+              // Prepend pre-roll ring buffer so initial words ("How do you...") are not clipped
+              speechBuffer.push(...preSpeechRingBuffer);
+              preSpeechRingBuffer = [];
+            }
             silenceBuffers = 0;
             speechBuffer.push(new Float32Array(channel));
           } else if (isSpeakingVoice) {
-            // Silence trailing after speech
+            // Trailing silence buffer
             speechBuffer.push(new Float32Array(channel));
             silenceBuffers++;
 
-            // ~1 second of trailing silence (4 * 0.256s)
-            if (silenceBuffers >= 4) {
+            // Wait ~0.7-0.9s of trailing silence before processing
+            const chunksNeeded = audioContext.sampleRate > 24000 ? 9 : 3;
+            if (silenceBuffers >= chunksNeeded) {
               isSpeakingVoice = false;
               silenceBuffers = 0;
-              const audioData = flattenFloat32Arrays(speechBuffer);
+              const rawAudio = flattenFloat32Arrays(speechBuffer);
               speechBuffer = [];
+              preSpeechRingBuffer = [];
 
-              // If at least ~0.75 seconds of audio captured
-              if (audioData.length >= 12000) {
-                processFirefoxAudio(audioData);
+              // Resample hardware sample rate (e.g. 48kHz or 44.1kHz) to 16,000 Hz for Whisper
+              const audio16k = resampleTo16k(rawAudio, audioContext.sampleRate);
+
+              // Require at least ~0.5s of audio (8,000 samples @ 16kHz)
+              if (audio16k.length >= 8000) {
+                processFirefoxAudio(audio16k);
               }
+            }
+          } else {
+            // Maintain rolling pre-roll buffer (~400-500ms lead-in)
+            const maxPreRoll = audioContext.sampleRate > 24000 ? 6 : 2;
+            preSpeechRingBuffer.push(new Float32Array(channel));
+            if (preSpeechRingBuffer.length > maxPreRoll) {
+              preSpeechRingBuffer.shift();
             }
           }
         };
@@ -699,24 +793,14 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
 
         const out = await whisperPipeline(float32Data);
         const transcript = (out && out.text) ? out.text.trim() : '';
-        console.log("Firefox VAD transcript:", transcript);
+        console.log("Firefox Whisper transcript:", transcript);
 
-        const regex = /how do you spell\s+([a-zA-Z\-]+)/i;
-        const match = transcript.match(regex);
-
-        if (match && match[1]) {
+        const targetWord = extractTargetWord(transcript);
+        if (targetWord) {
           setIcon('🐵');
-          await handleSpellingMatch(match[1]);
-        } else if (transcript.length > 0) {
-          const cleanWord = transcript.replace(/[^a-zA-Z]/g, '');
-          if (cleanWord.length > 1) {
-            setIcon('🐵');
-            await handleSpellingMatch(cleanWord);
-          } else {
-            console.log("Speech did not match command:", transcript);
-            setIcon('🙉');
-          }
+          await handleSpellingMatch(targetWord);
         } else {
+          console.log("Speech did not match spelling command:", transcript);
           setIcon('🙉');
         }
       } catch (err) {
@@ -826,13 +910,11 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
         const transcript = lastResult[0].transcript.trim();
         console.log("Heard transcript:", transcript);
 
-        const regex = /how do you spell\s+([a-zA-Z\-]+)/i;
-        const match = transcript.match(regex);
-
-        if (match && match[1]) {
+        const targetWord = extractTargetWord(transcript);
+        if (targetWord) {
           speechDetected = false;
           setIcon('🐵');
-          handleSpellingMatch(match[1]);
+          handleSpellingMatch(targetWord);
         } else {
           speechDetected = false;
           console.log("Speech did not match spelling command:", transcript);
