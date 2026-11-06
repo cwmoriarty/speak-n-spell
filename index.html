@@ -229,6 +229,37 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
         top: 62%;
         width: 94%;
       }
+
+      /* On mobile, word is displayed at the top and the icon underneath */
+      #displayArea.has-split {
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        gap: 1.5vh;
+      }
+
+      #displayArea.has-split #wordContainer {
+        width: 100%;
+        padding-right: 0;
+      }
+
+      #displayArea.has-split #wordContainer #resultUpper {
+        margin-bottom: 0.5vh;
+      }
+
+      #displayArea.has-split #pictureContainer {
+        width: 100%;
+        height: auto;
+        padding-left: 0;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+      }
+
+      #displayArea.has-split #wordImage {
+        width: clamp(90px, 18vh, 160px);
+        height: clamp(90px, 18vh, 160px);
+      }
     }
 
     .libleft {
@@ -583,8 +614,8 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       window.addEventListener(evt, onUserInteractionWakeLock, { passive: true });
     });
 
-    // Dynamic Font Resizing: 2/3rds width during split, 88% width when full center
-    function resizeElementText(element, targetWidth) {
+    // Dynamic Font Resizing: 2/3rds width during desktop split, full 88% width when full center or mobile column split
+    function resizeElementText(element, targetWidth, isMobileSplit = false) {
       if (!element) return;
       const text = element.textContent || "";
       if (!text) return;
@@ -596,16 +627,20 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       context.font = `${baseFontSize}px ${style.fontFamily || 'Open Sans, sans-serif'}`;
       const textWidth = context.measureText(text).width || 1;
       const scaleFactor = targetWidth / textWidth;
-      const newFontSize = Math.min(baseFontSize * scaleFactor, window.innerHeight * 0.20);
+      // When mobile split has icon underneath, bound max font height so both word and icon fit comfortably
+      const maxFontHeight = isMobileSplit ? (window.innerHeight * 0.12) : (window.innerHeight * 0.20);
+      const newFontSize = Math.min(baseFontSize * scaleFactor, maxFontHeight);
       element.style.fontSize = `${newFontSize}px`;
     }
 
     function resizeAll() {
       const isSplit = displayArea.classList.contains('has-split');
-      // Words take 2/3rds (62%) of screen width when split, 88% when full center
-      const targetWidth = isSplit ? (window.innerWidth * 0.62) : (window.innerWidth * 0.88);
-      resizeElementText(upperEl, targetWidth);
-      resizeElementText(lowerEl, targetWidth);
+      const isMobile = window.innerWidth <= 768;
+      // On desktop split: words take 2/3rds (62%) of screen width with icon beside it
+      // On mobile or full-center: word takes 88% of screen width (icon is underneath on mobile)
+      const targetWidth = (isSplit && !isMobile) ? (window.innerWidth * 0.62) : (window.innerWidth * 0.88);
+      resizeElementText(upperEl, targetWidth, isMobile && isSplit);
+      resizeElementText(lowerEl, targetWidth, isMobile && isSplit);
     }
 
     // Run initially and on resize
