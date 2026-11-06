@@ -482,7 +482,7 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       </div>
       <h1 id="appTitle">Speak N Spell 0.2a</h1>
     </div>
-    <div id="promptText">Ask "How do you spell ______"?</div>
+    <div id="promptText">Say "Spell ______" or "How do you spell ______"</div>
   </div>
 
   <div class="libleft">
@@ -758,41 +758,45 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       setDisplayMode(false);
     };
 
-    // Clean line-art icon search (stroke/outline only, ideal for children to draw/color)
+    // Kid-friendly Clipart & Illustration Search
+    // 1. Vector Clipart & Emojis: OpenMoji, Fluent Emoji, Twemoji, Noto
+    // 2. Iconify general vector collection
+    // 3. Wikimedia Commons / Wikipedia API for real-world nouns & objects
     async function fetchIcon(word) {
       try {
         const query = encodeURIComponent(word.toLowerCase().trim());
-        // Prioritize stroke/outline line-art icon sets
-        const lineArtPrefixes = "tabler,lucide,icon-park-outline,iconoir,feather,streamline";
-        let res = await fetch(`https://api.iconify.design/search?query=${query}&prefixes=${lineArtPrefixes}&limit=12`);
+
+        // 1. Primary: Rich, colorful vector clipart & illustrations (OpenMoji, Fluent Emoji, Twemoji, Noto)
+        const clipartPrefixes = "fluent-emoji-flat,openmoji,twemoji,noto";
+        let res = await fetch(`https://api.iconify.design/search?query=${query}&prefixes=${clipartPrefixes}&limit=12`);
         if (res.ok) {
           const data = await res.json();
           if (data.icons && data.icons.length > 0) {
-            // Find outline/line art (avoiding solid/filled/brand versions)
-            const outlineIcon = data.icons.find(name =>
-              !name.includes("fill") && !name.includes("solid") && !name.includes("brand") && !name.includes("color")
-            ) || data.icons[0];
-
-            const [prefix, name] = outlineIcon.split(':');
-            return `https://api.iconify.design/${prefix}/${name}.svg?color=%23111111`;
+            const [prefix, name] = data.icons[0].split(':');
+            return `https://api.iconify.design/${prefix}/${name}.svg`;
           }
         }
 
-        // Secondary search across general collections, prioritizing outline/line
+        // 2. Secondary: Broad Iconify search across all icon collections
         res = await fetch(`https://api.iconify.design/search?query=${query}&limit=20`);
         if (res.ok) {
           const data = await res.json();
           if (data.icons && data.icons.length > 0) {
-            const outlineIcon = data.icons.find(name =>
-              (name.includes("outline") || name.includes("line")) && !name.includes("fill") && !name.includes("color")
-            ) || data.icons.find(name => !name.includes("color") && !name.includes("fill")) || data.icons[0];
+            const [prefix, name] = data.icons[0].split(':');
+            return `https://api.iconify.design/${prefix}/${name}.svg`;
+          }
+        }
 
-            const [prefix, name] = outlineIcon.split(':');
-            return `https://api.iconify.design/${prefix}/${name}.svg?color=%23111111`;
+        // 3. Fallback: Wikipedia / Wikimedia Commons summary thumbnail for real-world nouns
+        res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${query}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.thumbnail && data.thumbnail.source) {
+            return data.thumbnail.source;
           }
         }
       } catch (err) {
-        console.warn("Icon search network error:", err);
+        console.warn("Icon/clipart search network error:", err);
       }
       return null;
     }
@@ -813,35 +817,35 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       if (!voices.length && 'speechSynthesis' in window) {
         voices = window.speechSynthesis.getVoices();
       }
+      if (!voices.length) return null;
 
-      // Ranked list of pleasant, natural voices for children
-      const preferredNames = [
-        'Samantha',           // Top Apple US voice (warm, articulate)
-        'Google US English',  // Top Chrome US voice
-        'Natural',            // Edge / Windows natural voices
-        'Jenny',
-        'Aria',
-        'Ava',
-        'Allison',
-        'Karen',
-        'Moira',
-        'Daniel'
-      ];
+      const isEnglish = (v) => !v.lang || v.lang.toLowerCase().startsWith('en');
 
+      // Tier 1: Microsoft Edge Online Natural Voices (Azure Neural) - highest clarity and human prosody
+      const edgeNatural = voices.find(v => isEnglish(v) && (v.name.includes('Online (Natural)') || (v.name.includes('Natural') && v.name.includes('Microsoft'))));
+      if (edgeNatural) return edgeNatural;
+
+      // Tier 2: Apple High-Fidelity Neural Voices (Enhanced, Premium, Siri)
+      const appleEnhanced = voices.find(v => isEnglish(v) && (v.name.includes('(Enhanced)') || v.name.includes('(Premium)') || v.name.includes('Siri')));
+      if (appleEnhanced) return appleEnhanced;
+
+      // Tier 3: Google US English (Chrome's neural streaming voice)
+      const googleVoice = voices.find(v => isEnglish(v) && v.name.includes('Google US English'));
+      if (googleVoice) return googleVoice;
+
+      // Tier 4: Preferred friendly English character voices
+      const preferredNames = ['Jenny', 'Aria', 'Ava', 'Samantha', 'Allison', 'Daniel', 'Karen', 'Moira'];
       for (const name of preferredNames) {
-        const found = voices.find(v => v.name && v.name.includes(name) && (!v.lang || v.lang.startsWith('en')));
+        const found = voices.find(v => isEnglish(v) && v.name.includes(name));
         if (found) return found;
       }
 
-      // Fallback: any US English voice
+      // Tier 5: Any US English voice
       const usVoice = voices.find(v => v.lang === 'en-US' || v.lang === 'en_US');
       if (usVoice) return usVoice;
 
-      // Fallback: any English voice
-      const enVoice = voices.find(v => v.lang && v.lang.startsWith('en'));
-      if (enVoice) return enVoice;
-
-      return null;
+      // Tier 6: Any English voice fallback
+      return voices.find(isEnglish) || null;
     }
 
     function TTS(text) {
@@ -853,8 +857,8 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       if (chosenVoice) utterance.voice = chosenVoice;
 
       utterance.volume = 1.0;
-      utterance.rate = 0.85;  // Clear, relaxed cadence for spelling
-      utterance.pitch = 1.0; // Natural human pitch (not squeaky)
+      utterance.rate = 0.92;  // Clear, natural speaking cadence for young learners
+      utterance.pitch = 1.0; // Natural pitch (avoids distortion)
 
       utterance.onstart = () => { isSpeaking = true; };
       utterance.onend = () => {
@@ -913,7 +917,7 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
         speechToggle.title = "Speech mode ON (listening) - Click to turn OFF";
         speechToggle.setAttribute('aria-label', 'Speech mode ON');
         if (promptText) {
-          promptText.textContent = promptMessage || 'Ask "How do you spell ______"?';
+          promptText.textContent = promptMessage || 'Say "Spell ______" or "How do you spell ______"';
         }
       } else if (icon === '🙊') {
         speechToggle.title = "Speech mode OFF - Click to turn ON";
@@ -922,10 +926,10 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
           promptText.textContent = promptMessage || 'Speech mode is OFF — click 🙊 to listen';
         }
       } else if (icon === '🙉') {
-        speechToggle.title = "Didn't hear 'How do you spell...' - Try again!";
+        speechToggle.title = "Didn't hear spelling command - Try again!";
         speechToggle.setAttribute('aria-label', "Didn't match spelling command");
         if (promptText) {
-          promptText.textContent = promptMessage || 'Didn\'t hear "How do you spell..." — try again! 👂';
+          promptText.textContent = promptMessage || 'Didn\'t catch that — try saying "Spell [word]" 👂';
         }
 
         resetIconTimer = setTimeout(() => {
@@ -1018,13 +1022,17 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       if (!clean) return null;
 
       const stopWords = new Set([
-        'the', 'a', 'an', 'word', 'it', 'that', 'this', 'me', 'you',
-        'how', 'to', 'do', 'spell', 'spelled', 'spelling', 'what', 'is', 'for'
+        'the', 'a', 'an', 'word', 'it', 'that', 'this', 'me', 'you', 'i', 'we', 'us',
+        'how', 'to', 'do', 'does', 'did', 'can', 'could', 'would', 'will', 'please',
+        'spell', 'spelled', 'spelling', 'spells', 'what', 'is', 'for', 'of', 'out',
+        'say', 'tell'
       ]);
 
-      // Pattern 1: Command prefix + optional (the/a/an/the word) + TARGET WORD
-      // Matches "how do you spell chicken", "how to spell chicken", "can you spell chicken", "spell chicken", "please spell chicken"
-      const prefixRegex = /(?:how\s+(?:do\s+you|to)\s+spell|can\s+you\s+spell|please\s+spell|\bspell)\s+(?:the\s+word\s+|the\s+|a\s+|an\s+)?([a-zA-Z\-]+)/i;
+      // Pattern 1: Command prefix + optional filler/articles + TARGET WORD
+      // Matches "spell dog", "spell out dog", "spell me dog", "spell the word dog",
+      // "how do you spell dog", "how do I spell dog", "can you spell dog", "please spell dog",
+      // "spelling of dog", "spelling for dog", "spelling dog", "what is the spelling of dog"
+      const prefixRegex = /(?:how\s+(?:do\s+(?:you|i|we)|to|would\s+you|can\s+(?:you|we)|is)\s+)?(?:can\s+you\s+|could\s+you\s+|would\s+you\s+|please\s+)?(?:\b(?:spell|spells|spelling|spelled)\b)\s+(?:(?:out|me|us|it|for\s+me|for\s+us|the\s+word|this\s+word|word|the|a|an|of|for)\s+)*([a-zA-Z\-]+)/i;
       const match = clean.match(prefixRegex);
       if (match && match[1]) {
         const candidate = match[1].toLowerCase();
@@ -1032,7 +1040,7 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       }
 
       // Pattern 2: Suffix form e.g. "how is chicken spelled" or "chicken how do you spell"
-      const suffixRegex = /(?:how\s+is\s+)?([a-zA-Z\-]+)\s+(?:spelled|how\s+do\s+you\s+spell)/i;
+      const suffixRegex = /(?:how\s+is\s+)?([a-zA-Z\-]+)\s+(?:spelled|how\s+do\s+(?:you|i)\s+spell)/i;
       const match2 = clean.match(suffixRegex);
       if (match2 && match2[1]) {
         const candidate = match2[1].toLowerCase();
@@ -1169,7 +1177,7 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
         audioProcessor.connect(audioContext.destination);
         isListeningFirefox = true;
         setIcon('🐵');
-        promptText.textContent = 'Ask "How do you spell ______"?';
+        promptText.textContent = 'Say "Spell ______" or "How do you spell ______"';
       } catch (err) {
         console.warn("Firefox continuous mic setup failed:", err);
         infoEl.textContent = "⚠️ Mic permission needed. Click 🐵 to allow.";
