@@ -584,11 +584,14 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       window.addEventListener(evt, onUserInteractionWakeLock, { passive: true });
     });
 
-    // Prompt user before closing or navigating away from the tab
-    window.addEventListener('beforeunload', (event) => {
+    // Prompt user before closing or navigating away from the tab (requires user interaction first)
+    const handleBeforeUnload = (event) => {
       event.preventDefault();
       event.returnValue = '';
-    });
+      return '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.onbeforeunload = handleBeforeUnload;
 
     // Dynamic Font Resizing: word takes full available width with a small buffer, without wrapping
     function resizeElementText(element, targetWidth, isMobileSplit = false) {
