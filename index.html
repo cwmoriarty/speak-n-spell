@@ -482,7 +482,7 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       </div>
       <h1 id="appTitle">Speak N Spell 0.2a</h1>
     </div>
-    <div id="promptText">Say "Spell ______" or "How do you spell ______"</div>
+    <div id="promptText">Say "Spell ______"</div>
   </div>
 
   <div class="libleft">
@@ -851,6 +851,15 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
     function TTS(text) {
       if (!('speechSynthesis' in window)) return;
 
+      // 1. Immediately mark isSpeaking to prevent processing device speaker audio/echo
+      isSpeaking = true;
+      speechDetected = false;
+
+      // Temporarily abort recognition so mic doesn't capture device speaker audio
+      if (recognition) {
+        try { recognition.abort(); } catch (e) {}
+      }
+
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
       const chosenVoice = getBestVoice();
@@ -860,15 +869,23 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       utterance.rate = 0.92;  // Clear, natural speaking cadence for young learners
       utterance.pitch = 1.0; // Natural pitch (avoids distortion)
 
-      utterance.onstart = () => { isSpeaking = true; };
-      utterance.onend = () => {
-        isSpeaking = false;
-        if (isSpeechEnabled && !isRecognizing && recognition) startRecognition();
+      utterance.onstart = () => {
+        isSpeaking = true;
       };
-      utterance.onerror = () => {
-        isSpeaking = false;
-        if (isSpeechEnabled && !isRecognizing && recognition) startRecognition();
+
+      const finishSpeaking = () => {
+        // Cooldown buffer (500ms) after speech audio ends so room echo/reverb clears
+        setTimeout(() => {
+          isSpeaking = false;
+          speechDetected = false;
+          if (isSpeechEnabled && !isRecognizing && recognition) {
+            startRecognition();
+          }
+        }, 500);
       };
+
+      utterance.onend = finishSpeaking;
+      utterance.onerror = finishSpeaking;
 
       console.log("Speaking with voice:", chosenVoice ? chosenVoice.name : "default", text);
       window.speechSynthesis.speak(utterance);
@@ -917,7 +934,7 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
         speechToggle.title = "Speech mode ON (listening) - Click to turn OFF";
         speechToggle.setAttribute('aria-label', 'Speech mode ON');
         if (promptText) {
-          promptText.textContent = promptMessage || 'Say "Spell ______" or "How do you spell ______"';
+          promptText.textContent = promptMessage || 'Say "Spell ______"';
         }
       } else if (icon === '🙊') {
         speechToggle.title = "Speech mode OFF - Click to turn ON";
@@ -926,10 +943,10 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
           promptText.textContent = promptMessage || 'Speech mode is OFF — click 🙊 to listen';
         }
       } else if (icon === '🙉') {
-        speechToggle.title = "Didn't hear spelling command - Try again!";
+        speechToggle.title = "Didn't hear 'Spell...' - Try again!";
         speechToggle.setAttribute('aria-label', "Didn't match spelling command");
         if (promptText) {
-          promptText.textContent = promptMessage || 'Didn\'t catch that — try saying "Spell [word]" 👂';
+          promptText.textContent = promptMessage || 'Say "Spell [word]" — e.g. "Spell dog" 👂';
         }
 
         resetIconTimer = setTimeout(() => {
@@ -1011,9 +1028,13 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       }
     }
 
-    // Robust extraction of spelling target word from natural speech transcript
+    // Strict extraction: ONLY trigger on "spell ____"
     function extractTargetWord(transcript) {
       if (!transcript || typeof transcript !== 'string') return null;
+
+      // Immediate self-speech echo rejection: never match "is spelled" / "spelled"
+      if (transcript.toLowerCase().includes('spelled')) return null;
+
       // Strip punctuation (quotes, commas, periods, question marks) while preserving words
       const clean = transcript
         .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?"'\x27]/g, ' ')
@@ -1028,29 +1049,13 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
         'say', 'tell'
       ]);
 
-      // Pattern 1: Command prefix + optional filler/articles + TARGET WORD
-      // Matches "spell dog", "spell out dog", "spell me dog", "spell the word dog",
-      // "how do you spell dog", "how do I spell dog", "can you spell dog", "please spell dog",
-      // "spelling of dog", "spelling for dog", "spelling dog", "what is the spelling of dog"
-      const prefixRegex = /(?:how\s+(?:do\s+(?:you|i|we)|to|would\s+you|can\s+(?:you|we)|is)\s+)?(?:can\s+you\s+|could\s+you\s+|would\s+you\s+|please\s+)?(?:\b(?:spell|spells|spelling|spelled)\b)\s+(?:(?:out|me|us|it|for\s+me|for\s+us|the\s+word|this\s+word|word|the|a|an|of|for)\s+)*([a-zA-Z\-]+)/i;
-      const match = clean.match(prefixRegex);
+      // Strict trigger: MUST contain "spell" followed by target word.
+      // Matches: "spell dog", "spell out dog", "spell the word dog", "can you spell dog", "how do you spell dog", "please spell dog"
+      // NEVER matches isolated single words or "is spelled"
+      const spellRegex = /\bspell\b\s+(?:out\s+|me\s+|us\s+|it\s+|the\s+word\s+|this\s+word\s+|word\s+|the\s+|a\s+|an\s+)*([a-zA-Z\-]+)/i;
+      const match = clean.match(spellRegex);
       if (match && match[1]) {
         const candidate = match[1].toLowerCase();
-        if (!stopWords.has(candidate)) return candidate;
-      }
-
-      // Pattern 2: Suffix form e.g. "how is chicken spelled" or "chicken how do you spell"
-      const suffixRegex = /(?:how\s+is\s+)?([a-zA-Z\-]+)\s+(?:spelled|how\s+do\s+(?:you|i)\s+spell)/i;
-      const match2 = clean.match(suffixRegex);
-      if (match2 && match2[1]) {
-        const candidate = match2[1].toLowerCase();
-        if (!stopWords.has(candidate)) return candidate;
-      }
-
-      // Pattern 3: Exactly ONE isolated single word spoken (length >= 2)
-      const words = clean.split(/\s+/).filter(Boolean);
-      if (words.length === 1 && words[0].length >= 2) {
-        const candidate = words[0].toLowerCase();
         if (!stopWords.has(candidate)) return candidate;
       }
 
@@ -1177,7 +1182,7 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
         audioProcessor.connect(audioContext.destination);
         isListeningFirefox = true;
         setIcon('🐵');
-        promptText.textContent = 'Say "Spell ______" or "How do you spell ______"';
+        promptText.textContent = 'Say "Spell ______"';
       } catch (err) {
         console.warn("Firefox continuous mic setup failed:", err);
         infoEl.textContent = "⚠️ Mic permission needed. Click 🐵 to allow.";
@@ -1186,7 +1191,7 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
 
     // Transcribe speech captured in Firefox via Whisper
     async function processFirefoxAudio(float32Data) {
-      if (isProcessingFirefox) return;
+      if (isProcessingFirefox || isSpeaking) return;
       isProcessingFirefox = true;
 
       try {
@@ -1198,6 +1203,11 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
         const out = await whisperPipeline(float32Data);
         const transcript = (out && out.text) ? out.text.trim() : '';
         console.log("Firefox Whisper transcript:", transcript);
+
+        // Immediate self-speech echo rejection
+        if (transcript.toLowerCase().includes('spelled')) {
+          return;
+        }
 
         const targetWord = extractTargetWord(transcript);
         if (targetWord) {
@@ -1302,17 +1312,26 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
         console.log("Speech recognition active");
       };
 
-      recognition.onspeechstart = () => { speechDetected = true; };
-      recognition.onsoundstart = () => { speechDetected = true; };
+      recognition.onspeechstart = () => { if (!isSpeaking) speechDetected = true; };
+      recognition.onsoundstart = () => { if (!isSpeaking) speechDetected = true; };
 
       recognition.onresult = (event) => {
-        if (isSpeaking) return;
+        if (isSpeaking) {
+          speechDetected = false;
+          return;
+        }
 
         const lastResult = event.results[event.results.length - 1];
         if (!lastResult || !lastResult[0]) return;
 
         const transcript = lastResult[0].transcript.trim();
         console.log("Heard transcript:", transcript);
+
+        // Immediate self-speech echo rejection
+        if (transcript.toLowerCase().includes('spelled')) {
+          speechDetected = false;
+          return;
+        }
 
         const targetWord = extractTargetWord(transcript);
         if (targetWord) {
@@ -1369,7 +1388,7 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
     }
 
     function startRecognition() {
-      if (!recognition || !isSpeechEnabled || isRecognizing) return;
+      if (!recognition || !isSpeechEnabled || isRecognizing || isSpeaking) return;
       try {
         recognition.start();
       } catch (err) {
