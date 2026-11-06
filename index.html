@@ -9,7 +9,7 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Speak N Spell 0.1a</title>
+  <title>Speak N Spell 0.2a</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link
@@ -43,7 +43,9 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       align-items: center;
       justify-content: center;
       padding: 0 4vw;
-      transition: all 0.25s ease;
+      transition: height 0.45s cubic-bezier(0.2, 0.8, 0.2, 1),
+                  top 0.45s cubic-bezier(0.2, 0.8, 0.2, 1),
+                  padding 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
     }
 
     #displayArea.no-split {
@@ -148,11 +150,24 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       max-width: 600px;
       text-align: center;
       font-size: calc(1vw + 1vh + 4px);
+      transition: top 0.45s cubic-bezier(0.2, 0.8, 0.2, 1),
+                  bottom 0.45s cubic-bezier(0.2, 0.8, 0.2, 1),
+                  left 0.45s cubic-bezier(0.2, 0.8, 0.2, 1),
+                  transform 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
     }
 
-    .centered h1 {
+    #brandHeader {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      transition: gap 0.4s ease;
+    }
+
+    #appTitle {
       font-size: calc(1.6vw + 1.6vh + 8px);
       margin: 4px 0 8px 0;
+      transition: font-size 0.4s ease, margin 0.4s ease;
     }
 
     #iconContainer {
@@ -160,6 +175,7 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       display: flex;
       justify-content: center;
       align-items: center;
+      transition: margin 0.4s ease;
     }
 
     #speechToggle {
@@ -173,6 +189,7 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       -webkit-user-select: none;
       display: inline-block;
       outline: none;
+      transition: font-size 0.4s ease, padding 0.4s ease;
     }
 
     #promptText {
@@ -180,6 +197,59 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       color: #333;
       margin-top: 4px;
       min-height: 24px;
+      transition: font-size 0.4s ease, margin 0.4s ease;
+    }
+
+    /* Active UI Mode: Once user spells their first word, brand moves to lower-left */
+    body.has-spelled #displayArea {
+      height: 74%;
+    }
+
+    body.has-spelled .centered {
+      top: auto;
+      bottom: 46px;
+      left: 14px;
+      transform: none;
+      width: auto;
+      max-width: calc(100vw - 28px);
+      text-align: left;
+    }
+
+    body.has-spelled #brandHeader {
+      flex-direction: row;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 8px;
+    }
+
+    body.has-spelled #iconContainer {
+      margin: 0;
+    }
+
+    body.has-spelled #speechToggle {
+      font-size: clamp(2rem, 3.2vw, 2.6rem);
+      padding: 0;
+    }
+
+    body.has-spelled #appTitle {
+      font-size: clamp(16px, 1.6vw, 22px);
+      margin: 0;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    body.has-spelled #promptText {
+      font-size: clamp(12px, 1.2vw, 14px);
+      margin-top: 3px;
+      margin-left: 2px;
+      min-height: 18px;
+      text-align: left;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .centered, #brandHeader, #appTitle, #speechToggle, #displayArea, #iconContainer, #promptText {
+        transition: none !important;
+      }
     }
 
 
@@ -284,6 +354,21 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       #displayArea.has-split #wordImage {
         width: clamp(75px, 15vh, 130px);
         height: clamp(75px, 15vh, 130px);
+      }
+
+      body.has-spelled #displayArea {
+        height: 74%;
+        top: 2%;
+      }
+
+      body.has-spelled #displayArea.has-split #wordImage {
+        width: clamp(80px, 18vh, 150px);
+        height: clamp(80px, 18vh, 150px);
+      }
+
+      body.has-spelled .centered {
+        bottom: 42px;
+        left: 12px;
       }
     }
 
@@ -391,17 +476,19 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
   </div>
 
   <div class="centered">
-    <div id="iconContainer">
-      <button id="speechToggle" onclick="handleIconClick()" aria-label="Toggle speech mode" title="Speech mode ON (listening) - Click to toggle">🐵</button>
+    <div id="brandHeader">
+      <div id="iconContainer">
+        <button id="speechToggle" onclick="handleIconClick()" aria-label="Toggle speech mode" title="Speech mode ON (listening) - Click to toggle">🐵</button>
+      </div>
+      <h1 id="appTitle">Speak N Spell 0.2a</h1>
     </div>
-    <h1>Speak N Spell 0.1a</h1>
     <div id="promptText">Ask "How do you spell ______"?</div>
   </div>
 
   <div class="libleft">
     <div id="info"></div>
     <span onclick="location.reload()" style="cursor: pointer;" title="Reload">👨‍💻</span> <a href="http://cwmoriarty.com">cwmoriarty.com</a>
-    <div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">Built 2026-11-06 04:15 UTC</div>
+    <div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">Built 2026-11-06 04:25 UTC</div>
   </div>
 
   <script>
@@ -871,6 +958,14 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       // Display spelling immediately
       upperEl.textContent = word.toUpperCase();
       lowerEl.textContent = word.toLowerCase();
+
+      // Once user spells their first word, transition brand title & monkey to lower left to give room for main UI
+      if (!document.body.classList.contains('has-spelled')) {
+        document.body.classList.add('has-spelled');
+        setTimeout(resizeAll, 50);
+        setTimeout(resizeAll, 460);
+      }
+
       resizeAll();
 
       // Search for line art icon
