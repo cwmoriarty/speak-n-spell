@@ -88,7 +88,9 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       font-family: "Open Sans", sans-serif;
       font-weight: 700;
       line-height: 1.1;
-      word-break: break-word;
+      white-space: nowrap;
+      word-break: normal;
+      overflow: visible;
       user-select: text;
       -webkit-user-select: text;
       margin-bottom: 2vh;
@@ -99,7 +101,9 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       font-weight: 400;
       line-height: 1.1;
       color: darkblue;
-      word-break: break-word;
+      white-space: nowrap;
+      word-break: normal;
+      overflow: visible;
       user-select: text;
       -webkit-user-select: text;
     }
@@ -225,6 +229,10 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
     }
 
     @media (max-width: 768px) {
+      #displayArea {
+        padding: 0 14px;
+      }
+
       .centered {
         top: 62%;
         width: 94%;
@@ -235,7 +243,7 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
         flex-direction: column;
         justify-content: center;
         align-items: center;
-        gap: 1.5vh;
+        gap: 1vh;
       }
 
       #displayArea.has-split #wordContainer {
@@ -257,8 +265,8 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       }
 
       #displayArea.has-split #wordImage {
-        width: clamp(90px, 18vh, 160px);
-        height: clamp(90px, 18vh, 160px);
+        width: clamp(75px, 15vh, 135px);
+        height: clamp(75px, 15vh, 135px);
       }
     }
 
@@ -333,11 +341,8 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
 </head>
 
 <body>
-  <!-- Top controls: Screen Wake Lock and Fullscreen Mode -->
+  <!-- Top controls: Fullscreen Mode -->
   <div class="top-controls">
-    <button id="wakeLockBtn" class="control-btn" onclick="toggleWakeLock()" aria-label="Toggle screen stay awake lock" title="Screen lock: keeps display awake">
-      <span>☀️</span><span class="btn-text"> Screen Awake</span>
-    </button>
     <button id="fullscreenBtn" class="control-btn" onclick="toggleFullscreen()" aria-label="Toggle Fullscreen" title="Toggle full screen mode">
       <span>⛶</span><span class="btn-text"> Fullscreen</span>
     </button>
@@ -379,7 +384,7 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
   <div class="libleft">
     <div id="info"></div>
     <span onclick="location.reload()" style="cursor: pointer;" title="Reload">👨‍💻</span> <a href="http://cwmoriarty.com">cwmoriarty.com</a>
-    <div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">Built 2026-11-06 03:45 UTC</div>
+    <div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">Built 2026-11-06 03:55 UTC</div>
   </div>
 
   <script>
@@ -417,7 +422,7 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
     const lowerEl = document.getElementById('resultLower');
     const infoEl = document.getElementById('info');
 
-    // Screen Wake Lock & Fullscreen state management
+    // Screen Wake Lock (Active by default across browsers)
     let wakeLockSentinel = null;
     let isWakeLockEnabled = true;
 
@@ -425,45 +430,37 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       if (!isWakeLockEnabled) return false;
       if (document.visibilityState !== 'visible') return false;
 
-      // Check for standard Screen Wake Lock API (Chrome, Edge, Safari 16.4+, Firefox 126+)
+      // Standard Screen Wake Lock API (Chrome, Edge, Safari 16.4+, Firefox 126+)
       if ('wakeLock' in navigator && navigator.wakeLock && typeof navigator.wakeLock.request === 'function') {
         try {
           if (wakeLockSentinel && !wakeLockSentinel.released) {
-            updateWakeLockUI(true);
             return true;
           }
           wakeLockSentinel = await navigator.wakeLock.request('screen');
           wakeLockSentinel.addEventListener('release', () => {
             console.log('Screen Wake Lock was released');
             wakeLockSentinel = null;
-            updateWakeLockUI(false);
           });
           console.log('Screen Wake Lock acquired successfully');
-          updateWakeLockUI(true);
           return true;
         } catch (err) {
-          // May reject if document is inactive, battery saver is active, or permission is restricted
           console.warn(`Screen Wake Lock request failed (${err.name}):`, err.message);
-          updateWakeLockUI(false);
           return false;
         }
       } else if ('requestWakeLock' in navigator) {
         // Fallback for legacy vendor-specific wake lock APIs
         try {
           wakeLockSentinel = navigator.requestWakeLock('screen');
-          updateWakeLockUI(true);
           return true;
         } catch (err) {
           console.warn('Legacy requestWakeLock failed:', err);
         }
       }
 
-      updateWakeLockUI(false);
       return false;
     }
 
     async function releaseWakeLock() {
-      isWakeLockEnabled = false;
       if (wakeLockSentinel) {
         try {
           if (wakeLockSentinel.release) {
@@ -475,39 +472,6 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
           console.warn('Wake Lock release error:', err);
         }
         wakeLockSentinel = null;
-      }
-      updateWakeLockUI(false);
-    }
-
-    async function toggleWakeLock() {
-      if (isWakeLockEnabled && wakeLockSentinel) {
-        await releaseWakeLock();
-      } else {
-        isWakeLockEnabled = true;
-        await requestWakeLock();
-      }
-    }
-
-    function updateWakeLockUI(isActive) {
-      const btn = document.getElementById('wakeLockBtn');
-      if (!btn) return;
-      const hasApi = ('wakeLock' in navigator) || ('requestWakeLock' in navigator);
-      if (!hasApi) {
-        btn.innerHTML = '<span>☀️</span><span class="btn-text"> Fullscreen Keeps Awake</span>';
-        btn.title = 'Screen Wake Lock API not supported on this browser; use Fullscreen mode to keep screen on.';
-        btn.classList.remove('active');
-        return;
-      }
-      if (isActive) {
-        btn.classList.add('active');
-        btn.innerHTML = '<span>☀️</span><span class="btn-text"> Screen Awake</span>';
-        btn.title = 'Screen lock active: Display will not turn off. Click to allow screen sleep.';
-        btn.setAttribute('aria-label', 'Screen stay awake active. Click to disable.');
-      } else {
-        btn.classList.remove('active');
-        btn.innerHTML = '<span>🌙</span><span class="btn-text"> Screen Normal</span>';
-        btn.title = 'Screen lock inactive: Display may sleep. Click to keep screen awake.';
-        btn.setAttribute('aria-label', 'Screen stay awake inactive. Click to enable.');
       }
     }
 
@@ -614,7 +578,7 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       window.addEventListener(evt, onUserInteractionWakeLock, { passive: true });
     });
 
-    // Dynamic Font Resizing: 2/3rds width during desktop split, full 88% width when full center or mobile column split
+    // Dynamic Font Resizing: word takes full available width with a small buffer, without wrapping
     function resizeElementText(element, targetWidth, isMobileSplit = false) {
       if (!element) return;
       const text = element.textContent || "";
@@ -624,21 +588,33 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       const context = canvas.getContext('2d');
       const style = window.getComputedStyle(element);
       const baseFontSize = 100;
-      context.font = `${baseFontSize}px ${style.fontFamily || 'Open Sans, sans-serif'}`;
+      const fontWeight = style.fontWeight || (element === upperEl ? '700' : '400');
+      const fontFamily = style.fontFamily || 'Open Sans, sans-serif';
+      context.font = `${fontWeight} ${baseFontSize}px ${fontFamily}`;
       const textWidth = context.measureText(text).width || 1;
       const scaleFactor = targetWidth / textWidth;
-      // When mobile split has icon underneath, bound max font height so both word and icon fit comfortably
-      const maxFontHeight = isMobileSplit ? (window.innerHeight * 0.12) : (window.innerHeight * 0.20);
-      const newFontSize = Math.min(baseFontSize * scaleFactor, maxFontHeight);
+      let newFontSize = baseFontSize * scaleFactor;
+
+      // Allow the word to expand to full width, capped only by displayArea vertical ceiling
+      const maxFontHeight = isMobileSplit ? (window.innerHeight * 0.17) : (window.innerHeight * 0.22);
+      newFontSize = Math.min(newFontSize, maxFontHeight);
       element.style.fontSize = `${newFontSize}px`;
+
+      // Safety check: if rendered width ever exceeds targetWidth, scale down to fit container without wrapping
+      if (element.scrollWidth > targetWidth) {
+        const adjust = targetWidth / element.scrollWidth;
+        element.style.fontSize = `${newFontSize * adjust}px`;
+      }
     }
 
     function resizeAll() {
       const isSplit = displayArea.classList.contains('has-split');
       const isMobile = window.innerWidth <= 768;
       // On desktop split: words take 2/3rds (62%) of screen width with icon beside it
-      // On mobile or full-center: word takes 88% of screen width (icon is underneath on mobile)
-      const targetWidth = (isSplit && !isMobile) ? (window.innerWidth * 0.62) : (window.innerWidth * 0.88);
+      // On mobile or full-center: word takes the full available width with a small 14px buffer on each side
+      const targetWidth = (isSplit && !isMobile)
+        ? (window.innerWidth * 0.62)
+        : (window.innerWidth - 28);
       resizeElementText(upperEl, targetWidth, isMobile && isSplit);
       resizeElementText(lowerEl, targetWidth, isMobile && isSplit);
     }
