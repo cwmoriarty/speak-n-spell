@@ -53,6 +53,12 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
     #displayArea.no-split #wordContainer {
       width: 100%;
       text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1vh;
+      text-fit: grow per-line-all 300%;
     }
 
     #displayArea.no-split #pictureContainer {
@@ -72,6 +78,8 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       justify-content: center;
       align-items: center;
       padding-right: 2vw;
+      gap: 1vh;
+      text-fit: grow per-line-all 300%;
     }
 
     /* Icon takes remaining 1/3rd (33.3%) of horizontal space */
@@ -87,19 +95,20 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
     #resultUpper {
       font-family: "Open Sans", sans-serif;
       font-weight: 700;
-      line-height: 1.1;
+      line-height: 1;
+      text-box: trim-both cap alphabetic;
       white-space: nowrap;
       word-break: normal;
       overflow: visible;
       user-select: text;
       -webkit-user-select: text;
-      margin-bottom: 2vh;
     }
 
     #resultLower {
       font-family: "Open Sans", sans-serif;
       font-weight: 400;
-      line-height: 1.1;
+      line-height: 1;
+      text-box: trim-both cap alphabetic;
       color: darkblue;
       white-space: nowrap;
       word-break: normal;
@@ -249,10 +258,7 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       #displayArea.has-split #wordContainer {
         width: 100%;
         padding-right: 0;
-      }
-
-      #displayArea.has-split #wordContainer #resultUpper {
-        margin-bottom: 0.5vh;
+        gap: 0.6vh;
       }
 
       #displayArea.has-split #pictureContainer {
@@ -384,7 +390,7 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
   <div class="libleft">
     <div id="info"></div>
     <span onclick="location.reload()" style="cursor: pointer;" title="Reload">👨‍💻</span> <a href="http://cwmoriarty.com">cwmoriarty.com</a>
-    <div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">Built 2026-11-06 03:55 UTC</div>
+    <div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">Built 2026-11-06 04:00 UTC</div>
   </div>
 
   <script>
@@ -576,6 +582,12 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
     };
     ['click', 'touchstart', 'pointerdown'].forEach(evt => {
       window.addEventListener(evt, onUserInteractionWakeLock, { passive: true });
+    });
+
+    // Prompt user before closing or navigating away from the tab
+    window.addEventListener('beforeunload', (event) => {
+      event.preventDefault();
+      event.returnValue = '';
     });
 
     // Dynamic Font Resizing: word takes full available width with a small buffer, without wrapping
