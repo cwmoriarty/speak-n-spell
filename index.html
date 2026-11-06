@@ -52,12 +52,12 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
 
     #displayArea.no-split #wordContainer {
       width: 100%;
+      height: 100%;
       text-align: center;
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
-      gap: 1vh;
+      justify-content: space-evenly;
       text-fit: grow per-line-all 300%;
     }
 
@@ -72,13 +72,13 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
     /* Words take 2/3rds (66.6%) of horizontal space */
     #displayArea.has-split #wordContainer {
       width: 66.666%;
+      height: 100%;
       text-align: center;
       display: flex;
       flex-direction: column;
-      justify-content: center;
+      justify-content: space-evenly;
       align-items: center;
       padding-right: 2vw;
-      gap: 1vh;
       text-fit: grow per-line-all 300%;
     }
 
@@ -102,6 +102,11 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       overflow: visible;
       user-select: text;
       -webkit-user-select: text;
+      flex: 1;
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
 
     #resultLower {
@@ -115,6 +120,11 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       overflow: visible;
       user-select: text;
       -webkit-user-select: text;
+      flex: 1;
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
 
     /* Crisp line art for children to draw/color */
@@ -250,15 +260,15 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       /* On mobile, word is displayed at the top and the icon underneath */
       #displayArea.has-split {
         flex-direction: column;
-        justify-content: center;
+        justify-content: space-between;
         align-items: center;
-        gap: 1vh;
       }
 
       #displayArea.has-split #wordContainer {
         width: 100%;
+        flex: 1;
+        height: auto;
         padding-right: 0;
-        gap: 0.6vh;
       }
 
       #displayArea.has-split #pictureContainer {
@@ -268,11 +278,12 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
         display: flex;
         justify-content: center;
         align-items: center;
+        margin-top: 4px;
       }
 
       #displayArea.has-split #wordImage {
-        width: clamp(75px, 15vh, 135px);
-        height: clamp(75px, 15vh, 135px);
+        width: clamp(75px, 15vh, 130px);
+        height: clamp(75px, 15vh, 130px);
       }
     }
 
@@ -390,7 +401,7 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
   <div class="libleft">
     <div id="info"></div>
     <span onclick="location.reload()" style="cursor: pointer;" title="Reload">👨‍💻</span> <a href="http://cwmoriarty.com">cwmoriarty.com</a>
-    <div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">Built 2026-11-06 04:00 UTC</div>
+    <div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">Built 2026-11-06 04:15 UTC</div>
   </div>
 
   <script>
