@@ -8,8 +8,16 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
 
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Speak N Spell 0.2a</title>
+  <meta name="description" content="Voice-controlled spelling tutor and picture dictionary for kids.">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/svg+xml" href="icon.svg">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <meta name="theme-color" content="#2e7d32">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link
@@ -151,6 +159,33 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       display: flex;
       align-items: center;
       justify-content: center;
+    }
+
+    .letter-glyph {
+      display: inline-block;
+      transition: transform 0.12s cubic-bezier(0.34, 1.56, 0.64, 1), color 0.12s ease, text-shadow 0.12s ease;
+      transform-origin: center bottom;
+    }
+
+    .letter-glyph.highlighted-letter {
+      transform: scale(1.22);
+      color: #e65100 !important;
+      text-shadow: 0 0 16px rgba(255, 143, 0, 0.55);
+    }
+
+    #syllablesDisplay {
+      font-family: "Comic Neue", "Open Sans", sans-serif;
+      font-size: clamp(14px, 1.8vw, 22px);
+      color: #37474f;
+      letter-spacing: 0.12em;
+      font-weight: 700;
+      padding: 3px 14px;
+      background: rgba(0, 0, 0, 0.05);
+      border-radius: 18px;
+      margin-top: 4px;
+      user-select: text;
+      -webkit-user-select: text;
+      transition: opacity 0.25s ease;
     }
 
     /* Crisp line art for children to draw/color */
@@ -467,8 +502,17 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
 </head>
 
 <body>
-  <!-- Top controls: Fullscreen Mode -->
+  <!-- Top controls: Repeat, Speed, Phonics & Fullscreen -->
   <div class="top-controls">
+    <button id="repeatBtn" class="control-btn" onclick="handleRepeatClick()" aria-label="Repeat spelling" title="Repeat spelling (hear it again)">
+      <span>🔁</span><span class="btn-text"> Repeat</span>
+    </button>
+    <button id="speedBtn" class="control-btn" onclick="toggleSpeechRate()" aria-label="Toggle speech speed" title="Spelling Speed: Normal (Click to change)">
+      <span id="speedIcon">🐇</span><span id="speedLabel" class="btn-text"> Normal</span>
+    </button>
+    <button id="phonicsBtn" class="control-btn" onclick="togglePhonicsMode()" aria-label="Toggle phonics mode" title="Mode: Letter Names (Click for Phonics)">
+      <span id="phonicsIcon">🔤</span><span id="phonicsLabel" class="btn-text"> Letters</span>
+    </button>
     <button id="fullscreenBtn" class="control-btn" onclick="toggleFullscreen()" aria-label="Toggle Fullscreen" title="Toggle full screen mode">
       <span>⛶</span><span class="btn-text"> Fullscreen</span>
     </button>
@@ -493,6 +537,7 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
     <div id="wordContainer" onclick="handleWordOrIconClick()" role="link" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();handleWordOrIconClick();}">
       <div id="resultUpper">WONDERFUL</div>
       <div id="resultLower">wonderful</div>
+      <div id="syllablesDisplay" title="Syllable breakdown">won · der · ful</div>
     </div>
     <div id="pictureContainer" onclick="handleWordOrIconClick()" role="link" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();handleWordOrIconClick();}">
       <img id="wordImage" alt="" style="display: none;">
@@ -512,7 +557,7 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
   <div class="libleft">
     <div id="info"></div>
     <span onclick="location.reload()" style="cursor: pointer;" title="Reload">👨‍💻</span> <a href="http://cwmoriarty.com">cwmoriarty.com</a>
-    <div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">Built 2026-11-06 04:25 UTC</div>
+    <div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">Built 2026-11-06 05:57 UTC</div>
   </div>
 
   <script>
@@ -951,14 +996,492 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       return voices.find(isEnglish) || null;
     }
 
-    function TTS(text) {
-      if (!('speechSynthesis' in window)) return;
+    // Web Audio Earcons (synthesized chimes with zero network payload & offline support)
+    let soundAudioContext = null;
+    function getSoundAudioContext() {
+      try {
+        if (!soundAudioContext) {
+          soundAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (soundAudioContext.state === 'suspended') {
+          soundAudioContext.resume();
+        }
+        return soundAudioContext;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function playTone(ctx, freq, startOffset, duration, type = 'sine', peakGain = 0.16) {
+      try {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        const now = ctx.currentTime + startOffset;
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, now);
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.exponentialRampToValueAtTime(peakGain, now + 0.015);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + duration + 0.03);
+      } catch (e) {}
+    }
+
+    function playEarcon(type) {
+      const ctx = getSoundAudioContext();
+      if (!ctx) return;
+      try {
+        if (type === 'match') {
+          // Happy ascending chime: C5 -> E5 -> G5 -> C6
+          playTone(ctx, 523.25, 0.00, 0.12, 'sine', 0.15);
+          playTone(ctx, 659.25, 0.09, 0.12, 'sine', 0.15);
+          playTone(ctx, 783.99, 0.18, 0.14, 'sine', 0.17);
+          playTone(ctx, 1046.50, 0.28, 0.30, 'sine', 0.18);
+        } else if (type === 'nomatch') {
+          // Gentle descending woodblock/chime: G4 -> E4
+          playTone(ctx, 392.00, 0.00, 0.15, 'triangle', 0.13);
+          playTone(ctx, 329.63, 0.11, 0.22, 'triangle', 0.11);
+        } else if (type === 'toggle') {
+          // D5 acoustic chime
+          playTone(ctx, 587.33, 0.00, 0.15, 'sine', 0.14);
+        } else if (type === 'repeat') {
+          // E5 -> G5 bright double chime
+          playTone(ctx, 659.25, 0.00, 0.10, 'sine', 0.14);
+          playTone(ctx, 783.99, 0.09, 0.20, 'sine', 0.16);
+        }
+      } catch (e) {
+        console.warn('Earcon play error:', e);
+      }
+    }
+
+    // Speech Speed Controller (🐇 Normal 0.92, 🐢 Slow 0.70, ⚡ Fast 1.15)
+    const SPEEDS = [
+      { id: 'normal', label: 'Normal', icon: '🐇', rate: 0.92, title: 'Spelling Speed: Normal (Click to change)' },
+      { id: 'slow', label: 'Slow', icon: '🐢', rate: 0.70, title: 'Spelling Speed: Slow (Click to change)' },
+      { id: 'fast', label: 'Fast', icon: '⚡', rate: 1.15, title: 'Spelling Speed: Fast (Click to change)' }
+    ];
+    let currentSpeedIndex = 0;
+
+    function initSpeedMode() {
+      try {
+        const saved = localStorage.getItem('speak_speed');
+        if (saved) {
+          const idx = SPEEDS.findIndex(s => s.id === saved);
+          if (idx !== -1) currentSpeedIndex = idx;
+        }
+      } catch (e) {}
+      updateSpeedUI();
+    }
+
+    function updateSpeedUI() {
+      const speed = SPEEDS[currentSpeedIndex];
+      const iconEl = document.getElementById('speedIcon');
+      const labelEl = document.getElementById('speedLabel');
+      const btn = document.getElementById('speedBtn');
+      if (iconEl) iconEl.textContent = speed.icon;
+      if (labelEl) labelEl.textContent = ' ' + speed.label;
+      if (btn) {
+        btn.title = speed.title;
+        btn.setAttribute('aria-label', speed.title);
+      }
+    }
+
+    function toggleSpeechRate() {
+      currentSpeedIndex = (currentSpeedIndex + 1) % SPEEDS.length;
+      try {
+        localStorage.setItem('speak_speed', SPEEDS[currentSpeedIndex].id);
+      } catch (e) {}
+      updateSpeedUI();
+    }
+
+    function getSpeechRate() {
+      return SPEEDS[currentSpeedIndex].rate;
+    }
+
+    // Phonics Mode Controller (🔤 Letter Names vs 🗣️ Phonics Sounds)
+    let isPhonicsMode = false;
+    const PHONICS_SOUNDS = {
+      a: "ah", b: "buh", c: "kuh", d: "duh", e: "eh", f: "ff", g: "guh", h: "huh",
+      i: "ih", j: "juh", k: "kuh", l: "ull", m: "mm", n: "nn", o: "aw", p: "puh",
+      q: "kwuh", r: "rrr", s: "sss", t: "tuh", u: "uh", v: "vvv", w: "wuh", x: "ks",
+      y: "yuh", z: "zzz"
+    };
+
+    function initPhonicsMode() {
+      try {
+        isPhonicsMode = localStorage.getItem('speak_phonics') === 'true';
+      } catch (e) {}
+      updatePhonicsUI();
+    }
+
+    function updatePhonicsUI() {
+      const iconEl = document.getElementById('phonicsIcon');
+      const labelEl = document.getElementById('phonicsLabel');
+      const btn = document.getElementById('phonicsBtn');
+      if (isPhonicsMode) {
+        if (iconEl) iconEl.textContent = '🗣️';
+        if (labelEl) labelEl.textContent = ' Phonics';
+        if (btn) {
+          btn.title = 'Mode: Phonics sounds (Click for Letter Names)';
+          btn.classList.add('active');
+        }
+      } else {
+        if (iconEl) iconEl.textContent = '🔤';
+        if (labelEl) labelEl.textContent = ' Letters';
+        if (btn) {
+          btn.title = 'Mode: Letter Names (Click for Phonics)';
+          btn.classList.remove('active');
+        }
+      }
+    }
+
+    function togglePhonicsMode() {
+      isPhonicsMode = !isPhonicsMode;
+      try {
+        localStorage.setItem('speak_phonics', isPhonicsMode ? 'true' : 'false');
+      } catch (e) {}
+      updatePhonicsUI();
+    }
+
+    // Syllables Engine (Child-friendly syllable breakdown)
+    const SYLLABLE_DICT = {
+      'wonderful': ['won', 'der', 'ful'],
+      'banana': ['ba', 'nan', 'a'],
+      'elephant': ['el', 'e', 'phant'],
+      'butterfly': ['but', 'ter', 'fly'],
+      'chocolate': ['choc', 'o', 'late'],
+      'dinosaur': ['di', 'no', 'saur'],
+      'computer': ['com', 'put', 'er'],
+      'san francisco': ['San', 'Fran', 'cis', 'co'],
+      'madison square garden': ['Mad', 'i', 'son', 'Square', 'Gar', 'den'],
+      'apple': ['ap', 'ple'],
+      'pizza': ['piz', 'za'],
+      'orange': ['or', 'ange'],
+      'purple': ['pur', 'ple'],
+      'yellow': ['yel', 'low'],
+      'monkey': ['mon', 'key'],
+      'tiger': ['ti', 'ger'],
+      'lion': ['li', 'on'],
+      'giraffe': ['gi', 'raffe'],
+      'zebra': ['ze', 'bra'],
+      'kangaroo': ['kan', 'ga', 'roo'],
+      'dolphin': ['dol', 'phin'],
+      'octopus': ['oc', 'to', 'pus'],
+      'alligator': ['al', 'li', 'ga', 'tor'],
+      'watermelon': ['wa', 'ter', 'mel', 'on'],
+      'strawberry': ['straw', 'ber', 'ry'],
+      'umbrella': ['um', 'brel', 'la'],
+      'rainbow': ['rain', 'bow'],
+      'sunshine': ['sun', 'shine'],
+      'helicopter': ['hel', 'i', 'cop', 'ter'],
+      'airplane': ['air', 'plane'],
+      'motorcycle': ['mo', 'tor', 'cy', 'cle'],
+      'bicycle': ['bi', 'cy', 'cle'],
+      'guitar': ['gui', 'tar'],
+      'piano': ['pi', 'an', 'o'],
+      'family': ['fam', 'i', 'ly'],
+      'happy': ['hap', 'py'],
+      'cookie': ['cook', 'ie'],
+      'sandwich': ['sand', 'wich'],
+      'princess': ['prin', 'cess'],
+      'superhero': ['su', 'per', 'he', 'ro'],
+      'aoife': ['Aoife'],
+      'meaghan': ['Meagh', 'an']
+    };
+
+    function splitWordSyllables(word) {
+      const clean = word.toLowerCase().trim();
+      if (SYLLABLE_DICT[clean]) {
+        return SYLLABLE_DICT[clean];
+      }
+      if (clean.length <= 3) {
+        return [word];
+      }
+
+      // Suffix rules
+      const suffixes = [
+        { re: /(ing)$/i, split: 3 },
+        { re: /(tion|sion)$/i, split: 4 },
+        { re: /(ment)$/i, split: 4 },
+        { re: /(ness)$/i, split: 4 },
+        { re: /(ful)$/i, split: 3 },
+        { re: /(less)$/i, split: 4 },
+        { re: /(able|ible)$/i, split: 4 },
+        { re: /([td]ed)$/i, split: 2 },
+        { re: /(er)$/i, split: 2 },
+        { re: /(est)$/i, split: 3 },
+        { re: /(ly)$/i, split: 2 }
+      ];
+
+      let stem = word;
+      let suf = '';
+      for (const s of suffixes) {
+        if (s.re.test(stem) && stem.length > s.split + 2) {
+          suf = stem.slice(-s.split);
+          stem = stem.slice(0, -s.split);
+          break;
+        }
+      }
+
+      let parts = [];
+      const doubleCons = stem.match(/([^aeiouy])\1/i);
+      if (doubleCons && doubleCons.index > 0 && doubleCons.index + 2 < stem.length) {
+        const splitPoint = doubleCons.index + 1;
+        parts = [stem.slice(0, splitPoint), stem.slice(splitPoint)];
+      } else {
+        const vccv = stem.match(/([aeiouy])([^aeiouy]{2})([aeiouy])/i);
+        if (vccv && vccv.index !== undefined) {
+          const splitPoint = vccv.index + 2;
+          parts = [stem.slice(0, splitPoint), stem.slice(splitPoint)];
+        } else {
+          const vcv = stem.match(/([aeiouy])([^aeiouy])([aeiouy])/i);
+          if (vcv && vcv.index !== undefined && vcv.index > 0) {
+            const splitPoint = vcv.index + 1;
+            parts = [stem.slice(0, splitPoint), stem.slice(splitPoint)];
+          } else {
+            parts = [stem];
+          }
+        }
+      }
+
+      if (suf) parts.push(suf);
+      return parts.filter(Boolean);
+    }
+
+    function getSyllables(phrase) {
+      if (!phrase) return '';
+      const cleanPhrase = phrase.toLowerCase().trim();
+      if (SYLLABLE_DICT[cleanPhrase]) {
+        return SYLLABLE_DICT[cleanPhrase].join(' · ');
+      }
+      const words = phrase.trim().split(/\s+/);
+      const allSyllables = [];
+      for (const w of words) {
+        const syls = splitWordSyllables(w);
+        allSyllables.push(...syls);
+      }
+      return allSyllables.join(' · ');
+    }
+
+    function updateSyllablesDisplay(word) {
+      const syllablesEl = document.getElementById('syllablesDisplay');
+      if (!syllablesEl) return;
+      if (!word || word.toUpperCase() === 'NO') {
+        syllablesEl.style.display = 'none';
+        syllablesEl.textContent = '';
+        return;
+      }
+      const text = getSyllables(word);
+      syllablesEl.textContent = text;
+      syllablesEl.style.display = text ? 'inline-block' : 'none';
+    }
+
+    // Letter Rendering & Follow-Along Highlighting
+    let letterHighlightTimers = [];
+
+    function clearLetterHighlights() {
+      letterHighlightTimers.forEach(t => clearTimeout(t));
+      letterHighlightTimers = [];
+      document.querySelectorAll('.letter-glyph.highlighted-letter').forEach(el => {
+        el.classList.remove('highlighted-letter');
+      });
+    }
+
+    function highlightLetterAtIndex(idx) {
+      document.querySelectorAll('.letter-glyph.highlighted-letter').forEach(el => {
+        el.classList.remove('highlighted-letter');
+      });
+      if (idx < 0) return;
+      document.querySelectorAll(`.letter-glyph[data-char-idx="${idx}"]`).forEach(el => {
+        el.classList.add('highlighted-letter');
+      });
+    }
+
+    function flashAllLetters() {
+      document.querySelectorAll('.letter-glyph').forEach(el => {
+        el.classList.add('highlighted-letter');
+      });
+      setTimeout(clearLetterHighlights, 650);
+    }
+
+    function renderWordLetters(word) {
+      clearLetterHighlights();
+      upperEl.innerHTML = '';
+      lowerEl.innerHTML = '';
+
+      const upperLetters = word.toUpperCase().split('');
+      const lowerLetters = word.toLowerCase().split('');
+
+      let charIdx = 0;
+      for (let i = 0; i < word.length; i++) {
+        const isAlpha = /[A-Za-z0-9]/.test(word[i]);
+        const thisIdx = isAlpha ? charIdx++ : -1;
+
+        const spanUp = document.createElement('span');
+        spanUp.className = isAlpha ? 'letter-glyph' : '';
+        if (isAlpha) spanUp.dataset.charIdx = thisIdx;
+        spanUp.textContent = upperLetters[i];
+        upperEl.appendChild(spanUp);
+
+        const spanLow = document.createElement('span');
+        spanLow.className = isAlpha ? 'letter-glyph' : '';
+        if (isAlpha) spanLow.dataset.charIdx = thisIdx;
+        spanLow.textContent = lowerLetters[i];
+        lowerEl.appendChild(spanLow);
+      }
+    }
+
+    // Pronounce spelling with letter-by-letter follow-along highlighting
+    function speakWord(word) {
+      if (!('speechSynthesis' in window) || !word) return;
 
       // 1. Immediately mark isSpeaking to prevent processing device speaker audio/echo
       isSpeaking = true;
       speechDetected = false;
+      clearLetterHighlights();
 
-      // Temporarily abort recognition so mic doesn't capture device speaker audio
+      if (recognition) {
+        try { recognition.abort(); } catch (e) {}
+      }
+
+      window.speechSynthesis.cancel();
+
+      const rate = getSpeechRate();
+      const chosenVoice = getBestVoice();
+
+      const cleanLetters = word.replace(/[^A-Za-z0-9]/g, '');
+      const totalLetters = cleanLetters.length;
+
+      let fullSpeechText = "";
+      const letterCharMap = [];
+
+      if (!isPhonicsMode) {
+        // Letter Names Mode: "cat is spelled C, A, T."
+        const wordParts = word.trim().split(/\s+/);
+        const spelledOut = wordParts
+          .map(w => w.split('').join(', '))
+          .join('. ');
+
+        const prefix = `${word} is spelled `;
+        fullSpeechText = `${prefix}${spelledOut}.`;
+
+        let searchStart = prefix.length;
+        for (let idx = 0; idx < totalLetters; idx++) {
+          const letterChar = cleanLetters[idx];
+          const foundPos = fullSpeechText.toUpperCase().indexOf(letterChar.toUpperCase(), searchStart);
+          if (foundPos !== -1) {
+            letterCharMap.push({ charIdx: idx, start: foundPos });
+            searchStart = foundPos + 1;
+          }
+        }
+      } else {
+        // Phonics Sounds Mode: "C says kuh. A says ah. T says tuh... C, A, T spells cat!"
+        const segments = [];
+        for (let i = 0; i < totalLetters; i++) {
+          const ch = cleanLetters[i].toLowerCase();
+          const sound = PHONICS_SOUNDS[ch] || ch;
+          const segment = `${cleanLetters[i].toUpperCase()} says ${sound}`;
+          const segStart = fullSpeechText.length;
+          fullSpeechText += (fullSpeechText ? '. ' : '') + segment;
+          letterCharMap.push({ charIdx: i, start: segStart });
+        }
+        const letterSummary = cleanLetters.toUpperCase().split('').join(', ');
+        fullSpeechText += `. ${letterSummary} spells ${word}!`;
+      }
+
+      const utterance = new SpeechSynthesisUtterance(fullSpeechText);
+      if (chosenVoice) utterance.voice = chosenVoice;
+
+      utterance.volume = 1.0;
+      utterance.rate = rate;
+      utterance.pitch = 1.0;
+
+      // Plan timed fallback highlight schedule (in case browser drops onboundary events)
+      let hasBoundaryTriggered = false;
+      if (!isPhonicsMode) {
+        const leadInMs = Math.max(700, Math.round(((`${word} is spelled `).length * 64) / rate));
+        const perLetterMs = Math.round(520 / rate);
+        for (let k = 0; k < totalLetters; k++) {
+          const delay = leadInMs + (k * perLetterMs);
+          const timer = setTimeout(() => {
+            if (!hasBoundaryTriggered) {
+              highlightLetterAtIndex(k);
+            }
+          }, delay);
+          letterHighlightTimers.push(timer);
+        }
+      } else {
+        const perSegmentMs = Math.round(1400 / rate);
+        for (let k = 0; k < totalLetters; k++) {
+          const delay = k * perSegmentMs;
+          const timer = setTimeout(() => {
+            if (!hasBoundaryTriggered) {
+              highlightLetterAtIndex(k);
+            }
+          }, delay);
+          letterHighlightTimers.push(timer);
+        }
+      }
+
+      // Synchronize with speech engine boundary events if available
+      utterance.onboundary = (event) => {
+        if (typeof event.charIndex === 'number' && letterCharMap.length > 0) {
+          for (let m = letterCharMap.length - 1; m >= 0; m--) {
+            if (event.charIndex >= letterCharMap[m].start) {
+              hasBoundaryTriggered = true;
+              highlightLetterAtIndex(letterCharMap[m].charIdx);
+              break;
+            }
+          }
+        }
+      };
+
+      utterance.onstart = () => {
+        isSpeaking = true;
+      };
+
+      let finished = false;
+      const finishWordSpeech = () => {
+        if (finished) return;
+        finished = true;
+        clearLetterHighlights();
+        flashAllLetters();
+
+        setTimeout(() => {
+          isSpeaking = false;
+          speechDetected = false;
+          if (isSpeechEnabled && !isRecognizing && recognition) {
+            startRecognition();
+          }
+        }, 500);
+      };
+
+      // Safety watchdog in case speech engine drops onend
+      const maxSpeechMs = Math.max(4000, Math.round((fullSpeechText.length * 160) / rate) + 2000);
+      const watchdogTimer = setTimeout(finishWordSpeech, maxSpeechMs);
+
+      utterance.onend = () => {
+        clearTimeout(watchdogTimer);
+        finishWordSpeech();
+      };
+      utterance.onerror = () => {
+        clearTimeout(watchdogTimer);
+        finishWordSpeech();
+      };
+
+      console.log(`Speaking (${isPhonicsMode ? 'phonics' : 'letters'} @ ${rate}x):`, chosenVoice ? chosenVoice.name : "default", fullSpeechText);
+      window.speechSynthesis.speak(utterance);
+    }
+
+    function TTS(text) {
+      if (!('speechSynthesis' in window)) return;
+
+      isSpeaking = true;
+      speechDetected = false;
+      clearLetterHighlights();
+
       if (recognition) {
         try { recognition.abort(); } catch (e) {}
       }
@@ -969,15 +1492,14 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       if (chosenVoice) utterance.voice = chosenVoice;
 
       utterance.volume = 1.0;
-      utterance.rate = 0.92;  // Clear, natural speaking cadence for young learners
-      utterance.pitch = 1.0; // Natural pitch (avoids distortion)
+      utterance.rate = getSpeechRate();
+      utterance.pitch = 1.0;
 
       utterance.onstart = () => {
         isSpeaking = true;
       };
 
       const finishSpeaking = () => {
-        // Cooldown buffer (500ms) after speech audio ends so room echo/reverb clears
         setTimeout(() => {
           isSpeaking = false;
           speechDetected = false;
@@ -990,8 +1512,14 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       utterance.onend = finishSpeaking;
       utterance.onerror = finishSpeaking;
 
-      console.log("Speaking with voice:", chosenVoice ? chosenVoice.name : "default", text);
       window.speechSynthesis.speak(utterance);
+    }
+
+    // Repeat button handler
+    function handleRepeatClick() {
+      if (!currentWord || currentWord.toUpperCase() === "NO") return;
+      playEarcon('repeat');
+      speakWord(currentWord);
     }
 
     // Profanity Filter: Fast local kid-safe check + Vector API fallback
@@ -1077,6 +1605,8 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
         setDisplayMode(false);
         upperEl.textContent = "NO";
         lowerEl.textContent = "no";
+        clearLetterHighlights();
+        updateSyllablesDisplay("");
         updateDestinationUrl("");
         resizeAll();
         setIcon('🙊', "🙊 Uh oh! We don't spell that word!");
@@ -1085,8 +1615,9 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       }
 
       // Display spelling immediately and resolve external dictionary/encyclopedia link
-      upperEl.textContent = word.toUpperCase();
-      lowerEl.textContent = word.toLowerCase();
+      playEarcon('match');
+      renderWordLetters(word);
+      updateSyllablesDisplay(word);
       updateDestinationUrl(word);
 
       // Once user spells their first word, transition brand title & monkey to lower left to give room for main UI
@@ -1102,12 +1633,8 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       const iconUrl = await fetchIcon(word);
       setDisplayMode(!!iconUrl, iconUrl);
 
-      // Pronounce letter-by-letter with slight pauses between letters, and a full pause between words
-      const wordParts = word.trim().split(/\s+/);
-      const spelledOut = wordParts
-        .map(w => w.split('').join(', '))
-        .join('. ');
-      TTS(word + " is spelled " + spelledOut);
+      // Pronounce with letter-by-letter follow-along highlighting
+      speakWord(word);
     }
 
     function enableFirefoxMic() {
@@ -1118,6 +1645,7 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
 
     // Click handler for speechToggle: toggles speech mode on/off
     function handleIconClick() {
+      playEarcon('toggle');
       if (isSpeechEnabled) {
         isSpeechEnabled = false;
         setIcon('🙊');
@@ -1353,6 +1881,7 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
         } else {
           console.log("Speech did not match spelling command:", transcript);
           setIcon('🙉');
+          playEarcon('nomatch');
         }
       } catch (err) {
         console.error("Whisper VAD processing error:", err);
@@ -1479,6 +2008,7 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
           speechDetected = false;
           console.log("Speech did not match spelling command:", transcript);
           setIcon('🙉');
+          playEarcon('nomatch');
         }
       };
 
@@ -1487,6 +2017,7 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
         speechDetected = false;
         console.log("Audio detected with no match");
         setIcon('🙉');
+        playEarcon('nomatch');
       };
 
       recognition.onerror = (event) => {
@@ -1510,6 +2041,7 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
         if (speechDetected && !isSpeaking && isSpeechEnabled) {
           speechDetected = false;
           setIcon('🙉');
+          playEarcon('nomatch');
         }
 
         if (isSpeechEnabled && !isSpeaking) {
@@ -1543,10 +2075,24 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       }
     }
 
-    // Initialize wake lock, fullscreen, and reference lookup on startup
+    // Initialize wake lock, fullscreen, UI modes, service worker, and reference lookup on startup
     checkFullscreenSupport();
     requestWakeLock();
+    initSpeedMode();
+    initPhonicsMode();
+    renderWordLetters("wonderful");
+    updateSyllablesDisplay("wonderful");
     updateDestinationUrl("wonderful");
+
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').then((reg) => {
+          console.log('Service Worker registered with scope:', reg.scope);
+        }).catch((err) => {
+          console.warn('Service Worker registration failed:', err);
+        });
+      });
+    }
   </script>
 </body>
 
