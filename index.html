@@ -761,10 +761,12 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
     // Kid-friendly Clipart & Illustration Search
     // 1. Vector Clipart & Emojis: OpenMoji, Fluent Emoji, Twemoji, Noto
     // 2. Iconify general vector collection
-    // 3. Wikimedia Commons / Wikipedia API for real-world nouns & objects
+    // 3. Wikimedia Commons / Wikipedia API for real-world nouns & objects (supporting multi-word places/things)
     async function fetchIcon(word) {
       try {
-        const query = encodeURIComponent(word.toLowerCase().trim());
+        const cleanWord = word.trim();
+        const query = encodeURIComponent(cleanWord.toLowerCase());
+        const queryHyphen = encodeURIComponent(cleanWord.toLowerCase().replace(/\s+/g, '-'));
 
         // 1. Primary: Rich, colorful vector clipart & illustrations (OpenMoji, Fluent Emoji, Twemoji, Noto)
         const clipartPrefixes = "fluent-emoji-flat,openmoji,twemoji,noto";
@@ -774,6 +776,18 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
           if (data.icons && data.icons.length > 0) {
             const [prefix, name] = data.icons[0].split(':');
             return `https://api.iconify.design/${prefix}/${name}.svg`;
+          }
+        }
+
+        // Try hyphenated form in clipart sets (e.g. "ice-cream", "hot-dog")
+        if (cleanWord.includes(' ')) {
+          res = await fetch(`https://api.iconify.design/search?query=${queryHyphen}&prefixes=${clipartPrefixes}&limit=12`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.icons && data.icons.length > 0) {
+              const [prefix, name] = data.icons[0].split(':');
+              return `https://api.iconify.design/${prefix}/${name}.svg`;
+            }
           }
         }
 
@@ -787,8 +801,9 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
           }
         }
 
-        // 3. Fallback: Wikipedia / Wikimedia Commons summary thumbnail for real-world nouns
-        res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${query}`);
+        // 3. Fallback: Wikipedia / Wikimedia Commons summary thumbnail for real-world nouns & multi-word places
+        const wikiQuery = encodeURIComponent(cleanWord.replace(/\s+/g, '_'));
+        res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${wikiQuery}`);
         if (res.ok) {
           const data = await res.json();
           if (data.thumbnail && data.thumbnail.source) {
@@ -902,6 +917,10 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
     async function checkIsProfane(text) {
       const clean = text.toLowerCase().trim();
       if (LOCAL_PROFANITY.has(clean)) return true;
+      const parts = clean.split(/\s+/);
+      for (const p of parts) {
+        if (LOCAL_PROFANITY.has(p)) return true;
+      }
 
       try {
         const controller = new AbortController();
@@ -993,8 +1012,14 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       const iconUrl = await fetchIcon(word);
       setDisplayMode(!!iconUrl, iconUrl);
 
-      // Pronounce letter-by-letter with slight pauses
-      const spelledOut = word.split('').join(', ');
+      // Pronounce letter-by-letter with slight pauses, speaking "space" between words in multi-word phrases
+      const wordParts = word.trim().split(/\s+/);
+      let spelledOut = '';
+      if (wordParts.length > 1) {
+        spelledOut = wordParts.map(w => w.split('').join(', ')).join(', space, ');
+      } else {
+        spelledOut = word.split('').join(', ');
+      }
       TTS(word + " is spelled " + spelledOut);
     }
 
@@ -1028,38 +1053,63 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       }
     }
 
-    // Strict extraction: ONLY trigger on "spell ____"
+    // Strict extraction: ONLY trigger on "spell ____" (supporting 1, 2, or 3+ word phrases)
     function extractTargetWord(transcript) {
       if (!transcript || typeof transcript !== 'string') return null;
 
       // Immediate self-speech echo rejection: never match "is spelled" / "spelled"
       if (transcript.toLowerCase().includes('spelled')) return null;
 
-      // Strip punctuation (quotes, commas, periods, question marks) while preserving words
+      // Strip punctuation while preserving hyphens and letters
       const clean = transcript
-        .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?"'\x27]/g, ' ')
+        .replace(/[.,\/#!$%\^&\*;:{}=\_`~()?"'\x27]/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
       if (!clean) return null;
 
+      // Must explicitly contain command "spell"
+      const spellMatch = clean.match(/\bspell\b/i);
+      if (!spellMatch) return null;
+
+      // Take all text following the command "spell"
+      const afterSpell = clean.slice(spellMatch.index + spellMatch[0].length).trim();
+      if (!afterSpell) return null;
+
+      // Strip leading filler words (e.g. "out", "me", "us", "the word", "the words", "this word", "a", "an", "the")
+      const leadingFillerRegex = /^(?:out\s+|me\s+|us\s+|it\s+|for\s+me\s+|for\s+us\s+|the\s+words?\s+|this\s+words?\s+|words?\s+|the\s+|a\s+|an\s+)+/i;
+      let candidate = afterSpell.replace(leadingFillerRegex, '').trim();
+
+      // Strip trailing polite words (e.g. "please", "for me", "for us", "thank you", "thanks")
+      const trailingFillerRegex = /(?:\s+(?:please|for\s+me|for\s+us|thank\s+you|thanks))+$/i;
+      candidate = candidate.replace(trailingFillerRegex, '').trim();
+
+      if (!candidate) return null;
+
       const stopWords = new Set([
-        'the', 'a', 'an', 'word', 'it', 'that', 'this', 'me', 'you', 'i', 'we', 'us',
+        'the', 'a', 'an', 'word', 'words', 'it', 'that', 'this', 'me', 'you', 'i', 'we', 'us',
         'how', 'to', 'do', 'does', 'did', 'can', 'could', 'would', 'will', 'please',
         'spell', 'spelled', 'spelling', 'spells', 'what', 'is', 'for', 'of', 'out',
         'say', 'tell'
       ]);
 
-      // Strict trigger: MUST contain "spell" followed by target word.
-      // Matches: "spell dog", "spell out dog", "spell the word dog", "can you spell dog", "how do you spell dog", "please spell dog"
-      // NEVER matches isolated single words or "is spelled"
-      const spellRegex = /\bspell\b\s+(?:out\s+|me\s+|us\s+|it\s+|the\s+word\s+|this\s+word\s+|word\s+|the\s+|a\s+|an\s+)*([a-zA-Z\-]+)/i;
-      const match = clean.match(spellRegex);
-      if (match && match[1]) {
-        const candidate = match[1].toLowerCase();
-        if (!stopWords.has(candidate)) return candidate;
+      // If candidate is a single word and matches a stopWord, ignore
+      const words = candidate.split(/\s+/).filter(Boolean);
+      if (words.length === 1 && stopWords.has(words[0].toLowerCase())) {
+        return null;
       }
 
-      return null;
+      // If candidate contains only stopWords (e.g. "it is that"), ignore
+      const nonStopWords = words.filter(w => !stopWords.has(w.toLowerCase()));
+      if (nonStopWords.length === 0) {
+        return null;
+      }
+
+      // Allow up to 4 words (e.g. "Madison Square Garden", "Empire State Building", "Statue of Liberty")
+      if (words.length > 4) {
+        candidate = words.slice(0, 4).join(' ');
+      }
+
+      return candidate;
     }
 
     // Helper: concatenate float32 audio chunks
