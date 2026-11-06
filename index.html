@@ -94,6 +94,30 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       padding-left: 1vw;
     }
 
+    #wordContainer,
+    #pictureContainer {
+      cursor: pointer;
+      user-select: none;
+      -webkit-user-select: none;
+      transition: opacity 0.2s ease, transform 0.2s ease;
+    }
+
+    #wordContainer:hover {
+      opacity: 0.82;
+    }
+
+    #wordContainer:active {
+      transform: scale(0.99);
+    }
+
+    #pictureContainer:hover #wordImage {
+      transform: scale(1.06);
+    }
+
+    #pictureContainer:active #wordImage {
+      transform: scale(0.96);
+    }
+
     #resultUpper {
       font-family: "Open Sans", sans-serif;
       font-weight: 700;
@@ -466,11 +490,11 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
 
   <!-- Split display: Left = Word (2/3rds), Right = Icon (1/3rd). If no icon: Word is Centered (no split) -->
   <div id="displayArea" class="no-split">
-    <div id="wordContainer">
+    <div id="wordContainer" onclick="handleWordOrIconClick()" role="link" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();handleWordOrIconClick();}">
       <div id="resultUpper">WONDERFUL</div>
       <div id="resultLower">wonderful</div>
     </div>
-    <div id="pictureContainer">
+    <div id="pictureContainer" onclick="handleWordOrIconClick()" role="link" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();handleWordOrIconClick();}">
       <img id="wordImage" alt="" style="display: none;">
     </div>
   </div>
@@ -525,6 +549,70 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
     const upperEl = document.getElementById('resultUpper');
     const lowerEl = document.getElementById('resultLower');
     const infoEl = document.getElementById('info');
+
+    // External Reference Link (Wikipedia if page exists, else dict.org)
+    let currentWord = "wonderful";
+    let currentDestinationUrl = "https://en.wikipedia.org/wiki/Wonderful";
+
+    async function updateDestinationUrl(word) {
+      if (!word) {
+        currentDestinationUrl = "";
+        updateLinkTitles();
+        return;
+      }
+      currentWord = word.trim();
+      const wikiSlug = encodeURIComponent(currentWord.replace(/\s+/g, '_'));
+      const dictUrl = `https://dict.org/bin/Dict?Form=Dict1&Query=${encodeURIComponent(currentWord)}&Strategy=*&Database=*`;
+
+      try {
+        const res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${wikiSlug}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.content_urls?.desktop?.page) {
+            currentDestinationUrl = data.content_urls.desktop.page;
+          } else {
+            currentDestinationUrl = `https://en.wikipedia.org/wiki/${wikiSlug}`;
+          }
+        } else {
+          currentDestinationUrl = dictUrl;
+        }
+      } catch (err) {
+        currentDestinationUrl = dictUrl;
+      }
+      updateLinkTitles();
+    }
+
+    function updateLinkTitles() {
+      const isWiki = currentDestinationUrl.includes('wikipedia.org');
+      const serviceName = isWiki ? 'Wikipedia' : 'dict.org';
+      const tooltip = currentWord ? `Click to look up "${currentWord}" on ${serviceName}` : '';
+      const wordContainer = document.getElementById('wordContainer');
+      const pictureContainer = document.getElementById('pictureContainer');
+      if (wordContainer) {
+        wordContainer.title = tooltip;
+        wordContainer.setAttribute('aria-label', tooltip);
+      }
+      if (pictureContainer) {
+        pictureContainer.title = tooltip;
+        pictureContainer.setAttribute('aria-label', tooltip);
+      }
+    }
+
+    async function handleWordOrIconClick() {
+      if (!currentWord) return;
+
+      if (currentDestinationUrl) {
+        window.open(currentDestinationUrl, '_blank', 'noopener,noreferrer');
+        return;
+      }
+
+      // Synchronously open blank window to avoid popup blocker, then redirect
+      const newTab = window.open('about:blank', '_blank');
+      await updateDestinationUrl(currentWord);
+      if (newTab) {
+        newTab.location.href = currentDestinationUrl;
+      }
+    }
 
     // Screen Wake Lock (Active by default across browsers)
     let wakeLockSentinel = null;
@@ -989,15 +1077,17 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
         setDisplayMode(false);
         upperEl.textContent = "NO";
         lowerEl.textContent = "no";
+        updateDestinationUrl("");
         resizeAll();
         setIcon('🙊', "🙊 Uh oh! We don't spell that word!");
         TTS("Uh oh! We don't spell that word.");
         return;
       }
 
-      // Display spelling immediately
+      // Display spelling immediately and resolve external dictionary/encyclopedia link
       upperEl.textContent = word.toUpperCase();
       lowerEl.textContent = word.toLowerCase();
+      updateDestinationUrl(word);
 
       // Once user spells their first word, transition brand title & monkey to lower left to give room for main UI
       if (!document.body.classList.contains('has-spelled')) {
@@ -1456,9 +1546,10 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       }
     }
 
-    // Initialize wake lock and fullscreen support on startup
+    // Initialize wake lock, fullscreen, and reference lookup on startup
     checkFullscreenSupport();
     requestWakeLock();
+    updateDestinationUrl("wonderful");
   </script>
 </body>
 
