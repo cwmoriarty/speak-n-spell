@@ -1102,14 +1102,11 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       const iconUrl = await fetchIcon(word);
       setDisplayMode(!!iconUrl, iconUrl);
 
-      // Pronounce letter-by-letter with slight pauses, speaking "space" between words in multi-word phrases
+      // Pronounce letter-by-letter with slight pauses between letters, and a full pause between words
       const wordParts = word.trim().split(/\s+/);
-      let spelledOut = '';
-      if (wordParts.length > 1) {
-        spelledOut = wordParts.map(w => w.split('').join(', ')).join(', space, ');
-      } else {
-        spelledOut = word.split('').join(', ');
-      }
+      const spelledOut = wordParts
+        .map(w => w.split('').join(', '))
+        .join('. ');
       TTS(word + " is spelled " + spelledOut);
     }
 
