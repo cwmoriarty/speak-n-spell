@@ -243,10 +243,75 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       color: #666;
       margin-bottom: 4px;
     }
+
+    /* Top Controls: Screen Lock & Fullscreen */
+    .top-controls {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      z-index: 100;
+    }
+
+    .control-btn {
+      background: rgba(255, 255, 255, 0.9);
+      border: 1px solid #d0d0d0;
+      border-radius: 18px;
+      padding: 5px 12px;
+      font-size: 13px;
+      font-family: inherit;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: #444;
+      user-select: none;
+      -webkit-user-select: none;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+      transition: all 0.15s ease;
+      touch-action: manipulation;
+    }
+
+    .control-btn:hover {
+      background: #f7f7f7;
+      border-color: #bbb;
+    }
+
+    .control-btn:active {
+      transform: scale(0.96);
+    }
+
+    .control-btn.active {
+      border-color: #2e7d32;
+      color: #1b5e20;
+      background: rgba(232, 245, 233, 0.95);
+    }
+
+    @media (max-width: 600px) {
+      .control-btn .btn-text {
+        display: none;
+      }
+      .control-btn {
+        padding: 6px 10px;
+        font-size: 16px;
+      }
+    }
   </style>
 </head>
 
 <body>
+  <!-- Top controls: Screen Wake Lock and Fullscreen Mode -->
+  <div class="top-controls">
+    <button id="wakeLockBtn" class="control-btn" onclick="toggleWakeLock()" aria-label="Toggle screen stay awake lock" title="Screen lock: keeps display awake">
+      <span>☀️</span><span class="btn-text"> Screen Awake</span>
+    </button>
+    <button id="fullscreenBtn" class="control-btn" onclick="toggleFullscreen()" aria-label="Toggle Fullscreen" title="Toggle full screen mode">
+      <span>⛶</span><span class="btn-text"> Fullscreen</span>
+    </button>
+  </div>
+
   <!-- Loading overlay for Firefox -->
   <div id="loadingOverlay">
     <div class="loadingCard">
@@ -283,7 +348,7 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
   <div class="libleft">
     <div id="info"></div>
     <span onclick="location.reload()" style="cursor: pointer;" title="Reload">👨‍💻</span> <a href="http://cwmoriarty.com">cwmoriarty.com</a>
-    <div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">Built 2026-10-29 04:10 UTC</div>
+    <div style="font-size: 10px; opacity: 0.6; margin-top: 4px;">Built 2026-11-06 03:45 UTC</div>
   </div>
 
   <script>
@@ -320,6 +385,203 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
     const upperEl = document.getElementById('resultUpper');
     const lowerEl = document.getElementById('resultLower');
     const infoEl = document.getElementById('info');
+
+    // Screen Wake Lock & Fullscreen state management
+    let wakeLockSentinel = null;
+    let isWakeLockEnabled = true;
+
+    async function requestWakeLock() {
+      if (!isWakeLockEnabled) return false;
+      if (document.visibilityState !== 'visible') return false;
+
+      // Check for standard Screen Wake Lock API (Chrome, Edge, Safari 16.4+, Firefox 126+)
+      if ('wakeLock' in navigator && navigator.wakeLock && typeof navigator.wakeLock.request === 'function') {
+        try {
+          if (wakeLockSentinel && !wakeLockSentinel.released) {
+            updateWakeLockUI(true);
+            return true;
+          }
+          wakeLockSentinel = await navigator.wakeLock.request('screen');
+          wakeLockSentinel.addEventListener('release', () => {
+            console.log('Screen Wake Lock was released');
+            wakeLockSentinel = null;
+            updateWakeLockUI(false);
+          });
+          console.log('Screen Wake Lock acquired successfully');
+          updateWakeLockUI(true);
+          return true;
+        } catch (err) {
+          // May reject if document is inactive, battery saver is active, or permission is restricted
+          console.warn(`Screen Wake Lock request failed (${err.name}):`, err.message);
+          updateWakeLockUI(false);
+          return false;
+        }
+      } else if ('requestWakeLock' in navigator) {
+        // Fallback for legacy vendor-specific wake lock APIs
+        try {
+          wakeLockSentinel = navigator.requestWakeLock('screen');
+          updateWakeLockUI(true);
+          return true;
+        } catch (err) {
+          console.warn('Legacy requestWakeLock failed:', err);
+        }
+      }
+
+      updateWakeLockUI(false);
+      return false;
+    }
+
+    async function releaseWakeLock() {
+      isWakeLockEnabled = false;
+      if (wakeLockSentinel) {
+        try {
+          if (wakeLockSentinel.release) {
+            await wakeLockSentinel.release();
+          } else if (wakeLockSentinel.unlock) {
+            wakeLockSentinel.unlock();
+          }
+        } catch (err) {
+          console.warn('Wake Lock release error:', err);
+        }
+        wakeLockSentinel = null;
+      }
+      updateWakeLockUI(false);
+    }
+
+    async function toggleWakeLock() {
+      if (isWakeLockEnabled && wakeLockSentinel) {
+        await releaseWakeLock();
+      } else {
+        isWakeLockEnabled = true;
+        await requestWakeLock();
+      }
+    }
+
+    function updateWakeLockUI(isActive) {
+      const btn = document.getElementById('wakeLockBtn');
+      if (!btn) return;
+      const hasApi = ('wakeLock' in navigator) || ('requestWakeLock' in navigator);
+      if (!hasApi) {
+        btn.innerHTML = '<span>☀️</span><span class="btn-text"> Fullscreen Keeps Awake</span>';
+        btn.title = 'Screen Wake Lock API not supported on this browser; use Fullscreen mode to keep screen on.';
+        btn.classList.remove('active');
+        return;
+      }
+      if (isActive) {
+        btn.classList.add('active');
+        btn.innerHTML = '<span>☀️</span><span class="btn-text"> Screen Awake</span>';
+        btn.title = 'Screen lock active: Display will not turn off. Click to allow screen sleep.';
+        btn.setAttribute('aria-label', 'Screen stay awake active. Click to disable.');
+      } else {
+        btn.classList.remove('active');
+        btn.innerHTML = '<span>🌙</span><span class="btn-text"> Screen Normal</span>';
+        btn.title = 'Screen lock inactive: Display may sleep. Click to keep screen awake.';
+        btn.setAttribute('aria-label', 'Screen stay awake inactive. Click to enable.');
+      }
+    }
+
+    // Fullscreen Mode API controller
+    function isFullscreenActive() {
+      return !!(
+        document.fullscreenElement ||
+        document.webkitFullscreenElement ||
+        document.mozFullScreenElement ||
+        document.msFullscreenElement
+      );
+    }
+
+    async function toggleFullscreen() {
+      try {
+        if (!isFullscreenActive()) {
+          const docEl = document.documentElement;
+          if (docEl.requestFullscreen) {
+            await docEl.requestFullscreen();
+          } else if (docEl.webkitRequestFullscreen) {
+            await docEl.webkitRequestFullscreen();
+          } else if (docEl.mozRequestFullScreen) {
+            await docEl.mozRequestFullScreen();
+          } else if (docEl.msRequestFullscreen) {
+            await docEl.msRequestFullscreen();
+          }
+          if (isWakeLockEnabled) {
+            await requestWakeLock();
+          }
+        } else {
+          if (document.exitFullscreen) {
+            await document.exitFullscreen();
+          } else if (document.webkitExitFullscreen) {
+            await document.webkitExitFullscreen();
+          } else if (document.mozCancelFullScreen) {
+            await document.mozCancelFullScreen();
+          } else if (document.msExitFullscreen) {
+            await document.msExitFullscreen();
+          }
+        }
+      } catch (err) {
+        console.warn('Fullscreen toggle error:', err);
+      }
+    }
+
+    function updateFullscreenUI() {
+      const btn = document.getElementById('fullscreenBtn');
+      if (!btn) return;
+      const inFull = isFullscreenActive();
+      if (inFull) {
+        btn.classList.add('active');
+        btn.setAttribute('aria-label', 'Exit full screen');
+        btn.title = 'Exit full screen mode';
+        btn.innerHTML = '<span>⤓</span><span class="btn-text"> Exit Fullscreen</span>';
+      } else {
+        btn.classList.remove('active');
+        btn.setAttribute('aria-label', 'Enter full screen');
+        btn.title = 'Enter full screen mode (helps keep screen awake)';
+        btn.innerHTML = '<span>⛶</span><span class="btn-text"> Fullscreen</span>';
+      }
+    }
+
+    // Check Fullscreen API support (hide button if browser does not support element fullscreen, e.g. iPhone Safari)
+    function checkFullscreenSupport() {
+      const btn = document.getElementById('fullscreenBtn');
+      if (!btn) return;
+      const docEl = document.documentElement;
+      const canFullscreen = !!(
+        docEl.requestFullscreen ||
+        docEl.webkitRequestFullscreen ||
+        docEl.mozRequestFullScreen ||
+        docEl.msRequestFullscreen
+      );
+      if (!canFullscreen) {
+        btn.style.display = 'none';
+      }
+    }
+
+    ['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange', 'MSFullscreenChange'].forEach(evt => {
+      document.addEventListener(evt, updateFullscreenUI);
+    });
+
+    // Auto re-acquire wake lock on page visibility change
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && isWakeLockEnabled) {
+        requestWakeLock();
+      }
+    });
+
+    // Auto re-acquire wake lock on window focus
+    window.addEventListener('focus', () => {
+      if (isWakeLockEnabled) {
+        requestWakeLock();
+      }
+    });
+
+    // Acquire on user gesture if browser requires user interaction first
+    const onUserInteractionWakeLock = () => {
+      if (isWakeLockEnabled && !wakeLockSentinel) {
+        requestWakeLock();
+      }
+    };
+    ['click', 'touchstart', 'pointerdown'].forEach(evt => {
+      window.addEventListener(evt, onUserInteractionWakeLock, { passive: true });
+    });
 
     // Dynamic Font Resizing: 2/3rds width during split, 88% width when full center
     function resizeElementText(element, targetWidth) {
@@ -585,6 +847,7 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
 
     function enableFirefoxMic() {
       if (loadingOverlay) loadingOverlay.style.display = 'none';
+      if (isWakeLockEnabled) requestWakeLock();
       startFirefoxContinuousListening();
     }
 
@@ -603,6 +866,7 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
         isSpeechEnabled = true;
         setIcon('🐵');
         infoEl.textContent = '';
+        if (isWakeLockEnabled) requestWakeLock();
         if (recognition) {
           startRecognition();
         } else {
@@ -982,6 +1246,10 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
         console.warn("stopRecognition caught error:", err);
       }
     }
+
+    // Initialize wake lock and fullscreen support on startup
+    checkFullscreenSupport();
+    requestWakeLock();
   </script>
 </body>
 
