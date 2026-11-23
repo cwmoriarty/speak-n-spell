@@ -1,5 +1,5 @@
 // Speak N Spell Service Worker - Offline Caching & PWA Support
-const CACHE_NAME = 'speak-n-spell-v2';
+const CACHE_NAME = 'speak-n-spell-v3';
 const STATIC_ASSETS = [
   './',
   './index.html',
