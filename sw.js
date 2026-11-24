@@ -1,117 +1,138 @@
-// Speak N Spell Service Worker - Offline Caching & PWA Support
-const CACHE_NAME = 'speak-n-spell-v3';
+// Speak N Spell Service Worker — Clean Offline Caching & PWA Support
+const STATIC_CACHE = 'speak-n-spell-static-v4';
+const MEDIA_CACHE = 'speak-n-spell-media-v4';
+const ACTIVE_CACHES = new Set([STATIC_CACHE, MEDIA_CACHE]);
+
 const STATIC_ASSETS = [
   './',
   './index.html',
+  './styles.css',
   './manifest.json',
   './icon.svg',
   './icon-192.png',
-  './icon-512.png'
+  './icon-512.png',
+  './js/app.js',
+  './js/mascot.js',
+  './js/media.js',
+  './js/speech-engine.js',
+  './js/syllables.js',
+  './js/vad-worklet.js',
+  './js/whisper-worker.js'
 ];
 
-// Offline starter icons (common words for instant offline availability)
+// Synced directly with OFFLINE_STARTER_ICONS in js/media.js for genuine offline illustration rendering
 const PRECACHE_ICONS = [
-  'https://api.iconify.design/openmoji/cat.svg',
-  'https://api.iconify.design/openmoji/dog.svg',
-  'https://api.iconify.design/openmoji/apple.svg',
-  'https://api.iconify.design/openmoji/banana.svg',
-  'https://api.iconify.design/openmoji/elephant.svg',
-  'https://api.iconify.design/openmoji/pizza.svg',
-  'https://api.iconify.design/openmoji/sun.svg',
-  'https://api.iconify.design/openmoji/car.svg',
-  'https://api.iconify.design/openmoji/star.svg',
-  'https://api.iconify.design/openmoji/butterfly.svg'
+  'https://api.iconify.design/tabler/cat.svg?color=%231d1a16',
+  'https://api.iconify.design/tabler/dog.svg?color=%231d1a16',
+  'https://api.iconify.design/tabler/apple.svg?color=%231d1a16',
+  'https://api.iconify.design/lucide/banana.svg?color=%231d1a16',
+  'https://api.iconify.design/tabler/pizza.svg?color=%231d1a16',
+  'https://api.iconify.design/tabler/sun.svg?color=%231d1a16',
+  'https://api.iconify.design/tabler/car.svg?color=%231d1a16',
+  'https://api.iconify.design/tabler/star.svg?color=%231d1a16',
+  'https://api.iconify.design/tabler/butterfly.svg?color=%231d1a16',
+  'https://api.iconify.design/tabler/fish.svg?color=%231d1a16',
+  'https://api.iconify.design/lucide/bird.svg?color=%231d1a16',
+  'https://api.iconify.design/tabler/flower.svg?color=%231d1a16',
+  'https://api.iconify.design/tabler/tree.svg?color=%231d1a16',
+  'https://api.iconify.design/tabler/home.svg?color=%231d1a16',
+  'https://api.iconify.design/tabler/moon.svg?color=%231d1a16',
+  'https://api.iconify.design/tabler/cloud.svg?color=%231d1a16',
+  'https://api.iconify.design/tabler/book.svg?color=%231d1a16',
+  'https://api.iconify.design/tabler/cake.svg?color=%231d1a16',
+  'https://api.iconify.design/tabler/heart.svg?color=%231d1a16',
+  'https://api.iconify.design/tabler/rocket.svg?color=%231d1a16'
 ];
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
   event.waitUntil(
-    caches.open(CACHE_NAME).then(async (cache) => {
-      await cache.addAll(STATIC_ASSETS);
-      // Best-effort pre-caching of starter icons
-      for (const url of PRECACHE_ICONS) {
-        try {
+    (async () => {
+      const staticCache = await caches.open(STATIC_CACHE);
+      await staticCache.addAll(STATIC_ASSETS);
+
+      const mediaCache = await caches.open(MEDIA_CACHE);
+      await Promise.allSettled(
+        PRECACHE_ICONS.map(async (url) => {
           const res = await fetch(url, { mode: 'cors' });
-          if (res.ok) await cache.put(url, res);
-        } catch (e) {
-          // Ignore individual network failures during install
-        }
-      }
-    })
+          if (res.ok) await mediaCache.put(url, res);
+        })
+      );
+    })()
   );
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => {
-      return Promise.all(
-        keys.map((key) => {
-          if (key !== CACHE_NAME) {
-            return caches.delete(key);
-          }
-        })
+    (async () => {
+      const keys = await caches.keys();
+      await Promise.all(
+        keys.map((key) => (!ACTIVE_CACHES.has(key) ? caches.delete(key) : Promise.resolve()))
       );
-    }).then(() => self.clients.claim())
+      await self.clients.claim();
+    })()
   );
 });
 
 self.addEventListener('fetch', (event) => {
-  const request = event.request;
-  const url = new URL(request.url);
-
-  // Skip non-GET requests
+  const { request } = event;
   if (request.method !== 'GET') return;
 
-  // 1. Navigation requests (HTML page): Stale-While-Revalidate with offline fallback
+  const url = new URL(request.url);
+
+  // 1. HTML Navigation: Network-first with proper async offline fallback
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request)
-        .then((response) => {
-          if (response.status === 200) {
-            const copy = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+      (async () => {
+        try {
+          const response = await fetch(request);
+          if (response.ok) {
+            const cache = await caches.open(STATIC_CACHE);
+            cache.put('./index.html', response.clone());
           }
           return response;
-        })
-        .catch(() => caches.match('./index.html') || caches.match('./'))
+        } catch {
+          const cache = await caches.open(STATIC_CACHE);
+          return (await cache.match('./index.html')) || (await cache.match('./'));
+        }
+      })()
     );
     return;
   }
 
-  // 2. Iconify & Wikimedia images: Cache-first strategy for smooth offline performance
+  // 2. Same-origin app assets (CSS, JS modules, icons): Stale-While-Revalidate
+  if (url.origin === self.location.origin) {
+    event.respondWith(
+      (async () => {
+        const cache = await caches.open(STATIC_CACHE);
+        const cached = await cache.match(request);
+        const networkPromise = fetch(request)
+          .then((res) => {
+            if (res && res.ok) cache.put(request, res.clone());
+            return res;
+          })
+          .catch(() => cached);
+        return cached || networkPromise;
+      })()
+    );
+    return;
+  }
+
+  // 3. Illustration assets (Iconify & Wikimedia): Cache-first
   if (url.hostname.includes('iconify.design') || url.hostname.includes('wikimedia.org')) {
     event.respondWith(
-      caches.match(request).then((cachedResponse) => {
-        if (cachedResponse) {
-          return cachedResponse;
-        }
-        return fetch(request).then((networkResponse) => {
-          if (networkResponse && networkResponse.status === 200) {
-            const copy = networkResponse.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
-          }
-          return networkResponse;
-        }).catch(() => {
-          // Return empty or fallback if offline
+      (async () => {
+        const cache = await caches.open(MEDIA_CACHE);
+        const cached = await cache.match(request);
+        if (cached) return cached;
+        try {
+          const res = await fetch(request);
+          if (res && res.ok) cache.put(request, res.clone());
+          return res;
+        } catch {
           return new Response('', { status: 408, headers: { 'Content-Type': 'text/plain' } });
-        });
-      })
-    );
-    return;
-  }
-
-  // 3. Static assets: Stale-While-Revalidate
-  event.respondWith(
-    caches.match(request).then((cachedResponse) => {
-      const fetchPromise = fetch(request).then((networkResponse) => {
-        if (networkResponse && networkResponse.status === 200) {
-          const copy = networkResponse.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
         }
-        return networkResponse;
-      }).catch(() => cachedResponse);
-
-      return cachedResponse || fetchPromise;
-    })
-  );
+      })()
+    );
+  }
 });

@@ -1,0 +1,903 @@
+/* Speak N Spell — Warm Paper & Chalkboard Design System (4px spacing grid) */
+
+:root {
+  --bg: #faf7f1;
+  --surface: #ffffff;
+  --surface-raised: #f1ece2;
+  --border: rgba(29, 26, 22, 0.10);
+  --border-strong: rgba(29, 26, 22, 0.22);
+  --rule-faint: rgba(29, 26, 22, 0.08);
+  --text-primary: #1d1a16;
+  --text-secondary: #5c5347;
+  --text-muted: #706659;
+  --text-lowercase: #1d3e78;
+  --accent: #236038;
+  --accent-hover: #1a4b2b;
+  --accent-soft: rgba(35, 96, 56, 0.10);
+  --accent-border: rgba(35, 96, 56, 0.36);
+  --danger: #b42318;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --shadow-sm: 0 1px 2px rgba(29, 26, 22, 0.05);
+  --shadow-card: 0 2px 10px rgba(29, 26, 22, 0.05);
+  --shadow-md: 0 12px 32px rgba(29, 26, 22, 0.10);
+  --font-sans: "Open Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--bg);
+  color: var(--text-primary);
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a {
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition: color 150ms var(--ease);
+}
+
+a:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+button:focus-visible,
+a:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* App Shell */
+.app-shell {
+  min-height: 100%;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  padding: 16px 24px;
+  gap: 16px;
+}
+
+/* Top Utility Bar */
+.top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 40px;
+}
+
+.top-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.control-btn {
+  height: 36px;
+  padding: 0 12px;
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  user-select: none;
+  -webkit-user-select: none;
+  box-shadow: var(--shadow-sm);
+  transition:
+    background-color 150ms var(--ease),
+    border-color 150ms var(--ease),
+    color 150ms var(--ease),
+    transform 120ms var(--ease);
+  touch-action: manipulation;
+}
+
+.control-btn svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.control-btn:hover {
+  background-color: var(--surface-raised);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.control-btn:active {
+  transform: scale(0.97);
+}
+
+.control-btn.active {
+  border-color: var(--accent-border);
+  color: var(--accent);
+  background-color: var(--accent-soft);
+}
+
+/* Center Stage */
+.main-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+  width: 100%;
+  max-width: 1440px;
+  margin: 0 auto;
+  min-height: 0;
+}
+
+/* Display Area: Full Center (no-split) vs 2/3 Word + 1/3 Drawing Card (has-split) */
+#displayArea {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 220px;
+}
+
+#displayArea.no-split {
+  flex-direction: column;
+}
+
+#displayArea.no-split #wordContainer {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+#displayArea.no-split #pictureContainer {
+  display: none;
+}
+
+#displayArea.has-split {
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+}
+
+#displayArea.has-split #wordContainer {
+  flex: 2 1 0%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+#displayArea.has-split #pictureContainer {
+  flex: 1 1 0%;
+  max-width: 320px;
+  aspect-ratio: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  padding: 24px;
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow-card);
+  cursor: pointer;
+  transition: border-color 150ms var(--ease), transform 140ms var(--ease);
+}
+
+#displayArea.has-split #pictureContainer:hover {
+  border-color: var(--border-strong);
+}
+
+#displayArea.has-split #pictureContainer:active {
+  transform: scale(0.98);
+}
+
+#wordContainer {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.word-line {
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  white-space: nowrap;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+  position: relative;
+}
+
+#resultUpper {
+  font-weight: 600;
+  line-height: 1.04;
+  color: var(--text-primary);
+  letter-spacing: -0.015em;
+}
+
+#resultLower {
+  font-weight: 400;
+  line-height: 1.08;
+  color: var(--text-lowercase);
+  letter-spacing: -0.01em;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--rule-faint);
+}
+
+.letter-glyph {
+  display: inline-block;
+  padding-bottom: 4px;
+  border-bottom: 3px solid transparent;
+  cursor: pointer;
+  border-radius: 2px;
+  transition:
+    transform 140ms var(--ease),
+    color 140ms var(--ease),
+    border-color 140ms var(--ease);
+  transform-origin: center bottom;
+}
+
+.letter-glyph:hover {
+  border-bottom-color: var(--border-strong);
+}
+
+.letter-glyph.highlighted-letter {
+  transform: translateY(-4px) scale(1.06);
+  color: var(--accent) !important;
+  border-bottom-color: var(--accent);
+}
+
+.letter-space {
+  display: inline-block;
+  white-space: pre;
+  width: 0.28em;
+}
+
+.word-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+#syllablesDisplay {
+  font-size: clamp(15px, 1.6vw, 20px);
+  color: var(--text-secondary);
+  letter-spacing: 0.06em;
+  font-weight: 500;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.meta-sep {
+  color: var(--border-strong);
+  user-select: none;
+}
+
+#lookupLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: background-color 150ms var(--ease), color 150ms var(--ease);
+}
+
+#lookupLink:hover {
+  background-color: var(--surface-raised);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+#lookupLink svg {
+  width: 14px;
+  height: 14px;
+}
+
+#wordImage {
+  width: 100%;
+  height: 100%;
+  max-width: 220px;
+  max-height: 220px;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-select: none;
+  pointer-events: none;
+}
+
+.picture-caption {
+  font-size: 12px;
+  color: var(--text-muted);
+  user-select: none;
+}
+
+/* Voice Companion / Brand Block */
+.voice-companion {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  transition: opacity 200ms var(--ease);
+}
+
+.brand-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+#speechToggle {
+  width: 72px;
+  height: 72px;
+  padding: 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 16px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  -webkit-user-select: none;
+  transition:
+    background-color 150ms var(--ease),
+    border-color 150ms var(--ease),
+    transform 120ms var(--ease);
+}
+
+#speechToggle:hover {
+  background-color: var(--surface-raised);
+  border-color: var(--border);
+}
+
+#speechToggle:active {
+  transform: scale(0.96);
+}
+
+#appTitle {
+  font-size: clamp(24px, 2.6vw, 32px);
+  font-weight: 600;
+  line-height: 1.15;
+  margin: 0;
+  letter-spacing: -0.015em;
+  color: var(--text-primary);
+}
+
+.prompt-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 24px;
+}
+
+#promptText {
+  font-size: 15px;
+  line-height: 22px;
+  color: var(--text-secondary);
+}
+
+#promptText.status-error {
+  color: var(--danger);
+}
+
+#heardHint {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--text-muted);
+}
+
+#heardHint:empty,
+#info:empty {
+  display: none;
+}
+
+/* Truthful 3-bar Voice Level Meter (only reacts to live mic energy) */
+.voice-meter {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 16px;
+  width: 14px;
+}
+
+.voice-meter span {
+  display: block;
+  width: 3px;
+  height: 4px;
+  border-radius: 2px;
+  background-color: var(--accent);
+  opacity: 0.35;
+  transform-origin: center;
+  transition: height 90ms linear, opacity 120ms var(--ease);
+}
+
+.voice-meter.muted span {
+  background-color: var(--text-muted);
+  opacity: 0.25;
+}
+
+/* Bottom Bar: Footer Meta + Docked Brand (when active) + Recent Words Tray */
+.bottom-bar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.bottom-left {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Active Spelled Mode: Brand docks smoothly into bottom-left rail */
+body.has-spelled .main-stage {
+  gap: 16px;
+}
+
+body.has-spelled .voice-companion {
+  align-items: flex-start;
+  text-align: left;
+  gap: 4px;
+}
+
+body.has-spelled .brand-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+body.has-spelled #speechToggle {
+  width: 44px;
+  height: 44px;
+  padding: 4px;
+  border-radius: 10px;
+}
+
+body.has-spelled #appTitle {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+body.has-spelled .prompt-row {
+  justify-content: flex-start;
+}
+
+body.has-spelled #promptText {
+  font-size: 13px;
+  line-height: 18px;
+}
+
+/* Recent Words Session Tray */
+.recent-tray {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 680px;
+}
+
+.recent-tray.has-items {
+  display: flex;
+}
+
+.recent-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-right: 4px;
+  user-select: none;
+}
+
+.recent-chip {
+  height: 32px;
+  padding: 0 12px;
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition:
+    background-color 140ms var(--ease),
+    border-color 140ms var(--ease),
+    color 140ms var(--ease);
+}
+
+.recent-chip:hover {
+  background-color: var(--surface-raised);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.recent-chip.active {
+  background-color: var(--accent-soft);
+  border-color: var(--accent-border);
+  color: var(--accent);
+}
+
+/* Footer Meta */
+.libleft {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+#info {
+  font-size: 12px;
+  color: var(--danger);
+  min-height: 0;
+}
+
+.footer-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--text-muted);
+}
+
+.reload-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background-color 150ms var(--ease), color 150ms var(--ease);
+}
+
+.reload-btn:hover {
+  background-color: var(--surface-raised);
+  color: var(--text-primary);
+}
+
+.reload-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.build-meta {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Loading Overlay for Firefox / Whisper Engine */
+#loadingOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(250, 247, 241, 0.94);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 16px;
+}
+
+.loadingCard {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 24px 32px;
+  text-align: center;
+  box-shadow: var(--shadow-md);
+  max-width: 380px;
+  width: 100%;
+}
+
+.loading-mascot {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 12px auto;
+}
+
+.loading-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+#loadingStatus {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.progressBarTrack {
+  width: 100%;
+  height: 8px;
+  background: var(--surface-raised);
+  border-radius: 4px;
+  overflow: hidden;
+  margin: 16px 0 12px 0;
+}
+
+#progressBar {
+  width: 0%;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 4px;
+  transition: width 200ms var(--ease);
+}
+
+#loadingSubtext {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+#startMicBtn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 40px;
+  margin: 16px auto 0 auto;
+  background: var(--accent);
+  color: #ffffff;
+  border: none;
+  padding: 0 20px;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 150ms var(--ease), transform 120ms var(--ease);
+}
+
+#startMicBtn:hover {
+  background: var(--accent-hover);
+}
+
+#startMicBtn:active {
+  transform: scale(0.97);
+}
+
+#startMicBtn svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Printable Coloring & Handwriting Practice Worksheet (hidden on screen) */
+#printWorksheet {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .app-shell {
+    padding: 12px 16px;
+    gap: 12px;
+  }
+
+  #displayArea.has-split {
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  #displayArea.has-split #wordContainer {
+    width: 100%;
+    flex: 0 0 auto;
+  }
+
+  #displayArea.has-split #pictureContainer {
+    width: 168px;
+    height: 168px;
+    max-width: 168px;
+    flex: 0 0 auto;
+    padding: 16px;
+    gap: 4px;
+  }
+
+  #wordImage {
+    max-width: 112px;
+    max-height: 112px;
+  }
+
+  .bottom-bar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .recent-tray {
+    justify-content: flex-start;
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 600px) {
+  .control-btn .btn-text {
+    display: none;
+  }
+
+  .control-btn {
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    justify-content: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+  }
+}
+
+/* Classroom-Grade Printable Tracing & Coloring Sheet */
+@media print {
+  @page {
+    size: portrait;
+    margin: 0.6in;
+  }
+
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  .app-shell,
+  #loadingOverlay {
+    display: none !important;
+  }
+
+  #printWorksheet {
+    display: flex !important;
+    flex-direction: column;
+    align-items: center;
+    gap: 24px;
+    width: 100%;
+    font-family: var(--font-sans);
+  }
+
+  .print-header {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    border-bottom: 1.5px solid #222;
+    padding-bottom: 8px;
+    font-size: 13px;
+    color: #444;
+  }
+
+  .print-header strong {
+    font-size: 16px;
+    color: #111;
+  }
+
+  .print-art-frame {
+    width: 280px;
+    height: 280px;
+    border: 1.5px solid #ccc;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+
+  .print-art-frame.empty {
+    display: none;
+  }
+
+  .print-art-frame img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+
+  .print-word-model {
+    text-align: center;
+  }
+
+  .print-word-upper {
+    font-size: 56px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    line-height: 1.1;
+  }
+
+  .print-word-lower {
+    font-size: 48px;
+    font-weight: 400;
+    letter-spacing: 0.03em;
+    line-height: 1.15;
+    margin-top: 4px;
+  }
+
+  .print-syllables {
+    font-size: 18px;
+    color: #555;
+    letter-spacing: 0.1em;
+    margin-top: 8px;
+  }
+
+  .print-practice {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+    margin-top: 12px;
+  }
+
+  .print-guide-row {
+    position: relative;
+    width: 100%;
+    height: 76px;
+    border-top: 1.5px solid #444;
+    border-bottom: 1.5px solid #444;
+    display: flex;
+    align-items: flex-end;
+    padding: 0 12px 4px 12px;
+  }
+
+  .print-guide-row::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 46%;
+    border-top: 1.5px dashed #999;
+  }
+
+  .print-trace-text {
+    position: relative;
+    z-index: 1;
+    font-size: 64px;
+    font-weight: 400;
+    line-height: 0.88;
+    color: #cfcfcf;
+    letter-spacing: 0.06em;
+  }
+}
