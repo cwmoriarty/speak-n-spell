@@ -53,9 +53,39 @@ export const SYLLABLE_DICT = Object.freeze({
   'blueberry': ['blue', 'ber', 'ry'],
   'raspberry': ['rasp', 'ber', 'ry'],
   'pineapple': ['pine', 'ap', 'ple'],
+  'cherry': ['cher', 'ry'],
+  'lemon': ['lem', 'on'],
+  'mango': ['man', 'go'],
+  'melon': ['mel', 'on'],
+  'tomato': ['to', 'ma', 'to'],
+  'carrot': ['car', 'rot'],
+  'broccoli': ['broc', 'co', 'li'],
   'vegetable': ['veg', 'e', 'ta', 'ble'],
   'spaghetti': ['spa', 'ghet', 'ti'],
   'macaroni': ['mac', 'a', 'ro', 'ni'],
+  'turtle': ['tur', 'tle'],
+  'rabbit': ['rab', 'bit'],
+  'puppy': ['pup', 'py'],
+  'kitten': ['kit', 'ten'],
+  'panda': ['pan', 'da'],
+  'koala': ['ko', 'a', 'la'],
+  'unicorn': ['u', 'ni', 'corn'],
+  'dragon': ['drag', 'on'],
+  'flamingo': ['fla', 'min', 'go'],
+  'volcano': ['vol', 'ca', 'no'],
+  'mountain': ['moun', 'tain'],
+  'ocean': ['o', 'cean'],
+  'island': ['is', 'land'],
+  'planet': ['plan', 'et'],
+  'rocket': ['rock', 'et'],
+  'robot': ['ro', 'bot'],
+  'castle': ['cas', 'tle'],
+  'pirate': ['pi', 'rate'],
+  'pencil': ['pen', 'cil'],
+  'crayon': ['cray', 'on'],
+  'notebook': ['note', 'book'],
+  'backpack': ['back', 'pack'],
+  'garden': ['gar', 'den'],
   'umbrella': ['um', 'brel', 'la'],
   'rainbow': ['rain', 'bow'],
   'sunshine': ['sun', 'shine'],
@@ -347,7 +377,16 @@ export const LOCAL_PROFANITY = new Set([
   'dick', 'piss', 'cunt'
 ]);
 
+const MAX_PROFANITY_CACHE = 200;
 const profanityCache = new Map();
+
+function rememberProfanity(key, value) {
+  if (profanityCache.size >= MAX_PROFANITY_CACHE) {
+    const oldest = profanityCache.keys().next().value;
+    profanityCache.delete(oldest);
+  }
+  profanityCache.set(key, value);
+}
 
 export async function checkIsProfane(text, signal) {
   const clean = text.toLowerCase().trim();
@@ -358,14 +397,14 @@ export async function checkIsProfane(text, signal) {
   }
 
   if (LOCAL_PROFANITY.has(clean)) {
-    profanityCache.set(clean, true);
+    rememberProfanity(clean, true);
     return true;
   }
 
   const parts = clean.split(/[\s\-]+/);
   for (const p of parts) {
     if (LOCAL_PROFANITY.has(p)) {
-      profanityCache.set(clean, true);
+      rememberProfanity(clean, true);
       return true;
     }
   }
@@ -391,7 +430,7 @@ export async function checkIsProfane(text, signal) {
     if (res.ok) {
       const data = await res.json();
       const result = !!data.isProfanity;
-      profanityCache.set(clean, result);
+      rememberProfanity(clean, result);
       return result;
     }
   } catch (err) {

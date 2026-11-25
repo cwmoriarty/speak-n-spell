@@ -25,9 +25,23 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
 </head>
 
 <body>
+  <div id="srAnnouncer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+
   <div class="app-shell">
     <!-- Top Utility Bar -->
     <header class="top-bar">
+      <div class="top-left-controls">
+        <button id="picturesBtn" type="button" class="control-btn" aria-label="Browse pictures and coloring pages" title="Browse pictures and coloring pages (B)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect width="7" height="7" x="3" y="3" rx="1"/>
+            <rect width="7" height="7" x="14" y="3" rx="1"/>
+            <rect width="7" height="7" x="14" y="14" rx="1"/>
+            <rect width="7" height="7" x="3" y="14" rx="1"/>
+          </svg>
+          <span class="btn-text">Pictures</span>
+        </button>
+      </div>
+
       <div class="top-controls" role="toolbar" aria-label="Spelling controls">
         <button id="repeatBtn" type="button" class="control-btn" aria-label="Repeat spelling" title="Repeat spelling (Space or R)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -35,6 +49,16 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
             <path d="M3 3v5h5"/>
           </svg>
           <span class="btn-text">Repeat</span>
+        </button>
+
+        <button id="practiceBtn" type="button" class="control-btn" aria-label="Practice mode: cover word" aria-pressed="false" title="Cover word to practice spelling (H)">
+          <svg id="practiceIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/>
+            <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/>
+            <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/>
+            <line x1="2" x2="22" y1="2" y2="22"/>
+          </svg>
+          <span id="practiceLabel" class="btn-text">Practice</span>
         </button>
 
         <button id="speedBtn" type="button" class="control-btn" aria-label="Spelling speed: Normal" title="Spelling speed: Normal (S to change)">
@@ -77,12 +101,12 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
 
     <!-- Primary Word & Drawing Stage -->
     <main class="main-stage">
-      <section id="displayArea" class="no-split" aria-live="polite">
+      <section id="displayArea" class="no-split">
         <div id="wordContainer">
           <div id="resultUpper" class="word-line">WONDERFUL</div>
           <div id="resultLower" class="word-line">wonderful</div>
           <div class="word-meta">
-            <span id="syllablesDisplay" title="Syllable breakdown">won · der · ful</span>
+            <span id="syllablesDisplay" role="button" tabindex="0" title="Click to hear word slowly">won · der · ful</span>
             <span id="metaSep" class="meta-sep" aria-hidden="true">·</span>
             <a id="lookupLink" href="https://en.wikipedia.org/wiki/Wonderful" target="_blank" rel="noopener noreferrer">
               <span id="lookupLabel">Wikipedia</span>
@@ -113,7 +137,7 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
           </span>
           <span id="promptText">Say "Spell ______"</span>
         </div>
-        <div id="heardHint" aria-live="polite"></div>
+        <div id="heardHint"></div>
       </section>
     </main>
 
@@ -131,7 +155,8 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
             </button>
             <a href="https://cwmoriarty.com">cwmoriarty.com</a>
             <span class="meta-sep" aria-hidden="true">·</span>
-            <span class="build-meta">v0.3 · Built 2026-11-24 00:55 EST</span>
+            <span class="build-meta">v0.4 · Built 2026-11-24 20:08 EST</span>
+            <span id="offlineBadge" class="offline-badge" hidden>Offline</span>
           </div>
         </div>
       </div>
@@ -139,6 +164,27 @@ Aoife FR: button you press and there's different pictures of fruit. you press on
       <nav id="recentTray" class="recent-tray" aria-label="Recent words"></nav>
     </footer>
   </div>
+
+  <!-- Picture & Coloring Page Picker Dialog (Aoife's Coloring Shelf) -->
+  <dialog id="pictureDialog" class="picture-dialog" aria-labelledby="pictureDialogTitle">
+    <div class="dialog-panel">
+      <header class="dialog-header">
+        <div>
+          <h2 id="pictureDialogTitle" class="dialog-title">Pictures and coloring pages</h2>
+          <p class="dialog-subtitle">Choose a picture to spell it, or print a coloring sheet</p>
+        </div>
+        <button id="closePicturesBtn" type="button" class="dialog-close" aria-label="Close pictures" title="Close (Esc)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="18" y1="6" x2="6" y2="18"/>
+            <line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </header>
+
+      <div id="pictureTabs" class="dialog-tabs" role="tablist" aria-label="Picture categories"></div>
+      <div id="pictureGrid" class="picture-grid" role="tabpanel"></div>
+    </div>
+  </dialog>
 
   <!-- Loading Overlay for Firefox / Whisper Fallback -->
   <div id="loadingOverlay" role="dialog" aria-modal="true" aria-labelledby="loadingTitle">

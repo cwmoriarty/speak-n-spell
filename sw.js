@@ -1,7 +1,8 @@
-// Speak N Spell Service Worker — Clean Offline Caching & PWA Support
-const STATIC_CACHE = 'speak-n-spell-static-v4';
-const MEDIA_CACHE = 'speak-n-spell-media-v4';
+// Speak N Spell Service Worker — Clean Offline Caching & Bounded Media Cache
+const STATIC_CACHE = 'speak-n-spell-static-v5';
+const MEDIA_CACHE = 'speak-n-spell-media-v5';
 const ACTIVE_CACHES = new Set([STATIC_CACHE, MEDIA_CACHE]);
+const MAX_MEDIA_ENTRIES = 160;
 
 const STATIC_ASSETS = [
   './',
@@ -20,29 +21,55 @@ const STATIC_ASSETS = [
   './js/whisper-worker.js'
 ];
 
-// Synced directly with OFFLINE_STARTER_ICONS in js/media.js for genuine offline illustration rendering
+// Synced directly with PICTURE_CATALOG & OFFLINE_STARTER_ICONS in js/media.js
 const PRECACHE_ICONS = [
-  'https://api.iconify.design/tabler/cat.svg?color=%231d1a16',
-  'https://api.iconify.design/tabler/dog.svg?color=%231d1a16',
-  'https://api.iconify.design/tabler/apple.svg?color=%231d1a16',
+  'https://api.iconify.design/lucide/apple.svg?color=%231d1a16',
   'https://api.iconify.design/lucide/banana.svg?color=%231d1a16',
-  'https://api.iconify.design/tabler/pizza.svg?color=%231d1a16',
-  'https://api.iconify.design/tabler/sun.svg?color=%231d1a16',
-  'https://api.iconify.design/tabler/car.svg?color=%231d1a16',
-  'https://api.iconify.design/tabler/star.svg?color=%231d1a16',
+  'https://api.iconify.design/lucide/cherry.svg?color=%231d1a16',
+  'https://api.iconify.design/lucide/grape.svg?color=%231d1a16',
+  'https://api.iconify.design/lucide/citrus.svg?color=%231d1a16',
+  'https://api.iconify.design/tabler/melon.svg?color=%231d1a16',
+  'https://api.iconify.design/lucide/cat.svg?color=%231d1a16',
+  'https://api.iconify.design/lucide/dog.svg?color=%231d1a16',
   'https://api.iconify.design/tabler/butterfly.svg?color=%231d1a16',
-  'https://api.iconify.design/tabler/fish.svg?color=%231d1a16',
   'https://api.iconify.design/lucide/bird.svg?color=%231d1a16',
-  'https://api.iconify.design/tabler/flower.svg?color=%231d1a16',
-  'https://api.iconify.design/tabler/tree.svg?color=%231d1a16',
-  'https://api.iconify.design/tabler/home.svg?color=%231d1a16',
-  'https://api.iconify.design/tabler/moon.svg?color=%231d1a16',
-  'https://api.iconify.design/tabler/cloud.svg?color=%231d1a16',
-  'https://api.iconify.design/tabler/book.svg?color=%231d1a16',
-  'https://api.iconify.design/tabler/cake.svg?color=%231d1a16',
-  'https://api.iconify.design/tabler/heart.svg?color=%231d1a16',
-  'https://api.iconify.design/tabler/rocket.svg?color=%231d1a16'
+  'https://api.iconify.design/lucide/fish.svg?color=%231d1a16',
+  'https://api.iconify.design/lucide/turtle.svg?color=%231d1a16',
+  'https://api.iconify.design/lucide/rabbit.svg?color=%231d1a16',
+  'https://api.iconify.design/lucide/squirrel.svg?color=%231d1a16',
+  'https://api.iconify.design/lucide/sun.svg?color=%231d1a16',
+  'https://api.iconify.design/lucide/moon.svg?color=%231d1a16',
+  'https://api.iconify.design/lucide/star.svg?color=%231d1a16',
+  'https://api.iconify.design/lucide/rainbow.svg?color=%231d1a16',
+  'https://api.iconify.design/lucide/flower-2.svg?color=%231d1a16',
+  'https://api.iconify.design/lucide/tree-pine.svg?color=%231d1a16',
+  'https://api.iconify.design/lucide/cloud.svg?color=%231d1a16',
+  'https://api.iconify.design/lucide/rocket.svg?color=%231d1a16',
+  'https://api.iconify.design/lucide/house.svg?color=%231d1a16',
+  'https://api.iconify.design/lucide/car.svg?color=%231d1a16',
+  'https://api.iconify.design/lucide/bike.svg?color=%231d1a16',
+  'https://api.iconify.design/lucide/plane.svg?color=%231d1a16',
+  'https://api.iconify.design/lucide/pizza.svg?color=%231d1a16',
+  'https://api.iconify.design/lucide/cake.svg?color=%231d1a16',
+  'https://api.iconify.design/lucide/book-open.svg?color=%231d1a16',
+  'https://api.iconify.design/lucide/umbrella.svg?color=%231d1a16',
+  'https://api.iconify.design/tabler/lemon.svg?color=%231d1a16',
+  'https://api.iconify.design/lucide/carrot.svg?color=%231d1a16',
+  'https://api.iconify.design/lucide/cookie.svg?color=%231d1a16',
+  'https://api.iconify.design/lucide/ice-cream-cone.svg?color=%231d1a16',
+  'https://api.iconify.design/lucide/snail.svg?color=%231d1a16',
+  'https://api.iconify.design/lucide/heart.svg?color=%231d1a16',
+  'https://api.iconify.design/lucide/crown.svg?color=%231d1a16'
 ];
+
+async function trimMediaCache(cache) {
+  const keys = await cache.keys();
+  if (keys.length <= MAX_MEDIA_ENTRIES) return;
+  const excess = keys.length - MAX_MEDIA_ENTRIES;
+  for (let i = 0; i < excess; i++) {
+    await cache.delete(keys[i]);
+  }
+}
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
@@ -80,7 +107,7 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url);
 
-  // 1. HTML Navigation: Network-first with proper async offline fallback
+  // 1. HTML Navigation: Network-first with async offline fallback
   if (request.mode === 'navigate') {
     event.respondWith(
       (async () => {
@@ -100,7 +127,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 2. Same-origin app assets (CSS, JS modules, icons): Stale-While-Revalidate
+  // 2. Same-origin app assets: Stale-While-Revalidate
   if (url.origin === self.location.origin) {
     event.respondWith(
       (async () => {
@@ -118,7 +145,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 3. Illustration assets (Iconify & Wikimedia): Cache-first
+  // 3. Illustration assets (Iconify & Wikimedia): Cache-first with bounded size
   if (url.hostname.includes('iconify.design') || url.hostname.includes('wikimedia.org')) {
     event.respondWith(
       (async () => {
@@ -127,7 +154,10 @@ self.addEventListener('fetch', (event) => {
         if (cached) return cached;
         try {
           const res = await fetch(request);
-          if (res && res.ok) cache.put(request, res.clone());
+          if (res && res.ok) {
+            await cache.put(request, res.clone());
+            trimMediaCache(cache);
+          }
           return res;
         } catch {
           return new Response('', { status: 408, headers: { 'Content-Type': 'text/plain' } });

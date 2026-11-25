@@ -1,4 +1,4 @@
-// Unified Speech Recognition (Web Speech API + Off-Main-Thread Whisper VAD) & Synchronized Chunked TTS Engine
+// Unified Speech Recognition (Web Speech API + Off-Main-Thread Whisper VAD) & Hybrid Synchronized TTS Engine
 
 import { PHONICS_SOUNDS, extractTargetWord } from './syllables.js';
 
@@ -56,6 +56,15 @@ export function isWhisperHallucination(transcript) {
   return WHISPER_NOISE_HALLUCINATIONS.has(bare);
 }
 
+/**
+ * Format a standalone letter so TTS engines pronounce its letter name clearly
+ * (e.g. prevents bare "A" from being reduced to schwa "uh").
+ */
+export function formatSpokenLetter(ch) {
+  const upper = String(ch || '').toUpperCase();
+  return upper ? `${upper}.` : '';
+}
+
 export class SpeechEngine {
   constructor(callbacks = {}) {
     this.cb = callbacks;
@@ -68,13 +77,15 @@ export class SpeechEngine {
     this.recognition = null;
     this.voices = [];
 
-    // Strict playback sequence locking (prevents echo & overlapping timers)
+    // Encapsulated playback sequence locking (prevents echo & overlapping timers)
     this.activeUtterance = null;
-    this.speechPlaybackSeq = 0;
+    this.playbackToken = 0;
     this.speechCooldownTimer = null;
     this.speechStepTimer = null;
     this.speechWatchdogTimer = null;
     this.recognitionRestartTimer = null;
+    this.toggleResumeTimer = null;
+    this.fallbackHighlightTimers = [];
     this.restartBackoffMs = 300;
 
     // Earcon AudioContext (separate from mic capture)
@@ -120,32 +131,45 @@ export class SpeechEngine {
 
     const isEnglish = (v) => !v.lang || v.lang.toLowerCase().startsWith('en');
 
+    // Tier 1: High-fidelity LOCAL neural voices (zero latency, offline, reliable onboundary)
+    const localEnhanced = this.voices.find(
+      (v) =>
+        isEnglish(v) &&
+        v.localService !== false &&
+        (v.name.includes('(Enhanced)') || v.name.includes('(Premium)') || v.name.includes('Siri'))
+    );
+    if (localEnhanced) return localEnhanced;
+
+    // Tier 2: Preferred local friendly character voices
+    const preferredLocalNames = ['Samantha', 'Ava', 'Allison', 'Karen', 'Moira', 'Daniel'];
+    for (const name of preferredLocalNames) {
+      const found = this.voices.find((v) => isEnglish(v) && v.localService !== false && v.name.includes(name));
+      if (found) return found;
+    }
+
+    // Tier 3: High-clarity cloud neural voices (Edge Online Natural / Chrome Google US English)
     const edgeNatural = this.voices.find(
       (v) => isEnglish(v) && (v.name.includes('Online (Natural)') || (v.name.includes('Natural') && v.name.includes('Microsoft')))
     );
     if (edgeNatural) return edgeNatural;
 
-    const appleEnhanced = this.voices.find(
-      (v) => isEnglish(v) && (v.name.includes('(Enhanced)') || v.name.includes('(Premium)') || v.name.includes('Siri'))
-    );
-    if (appleEnhanced) return appleEnhanced;
-
     const googleVoice = this.voices.find((v) => isEnglish(v) && v.name.includes('Google US English'));
     if (googleVoice) return googleVoice;
 
-    const preferredNames = ['Jenny', 'Aria', 'Ava', 'Samantha', 'Allison', 'Daniel', 'Karen', 'Moira'];
-    for (const name of preferredNames) {
+    // Tier 4: Preferred general names (remote or local)
+    const generalNames = ['Jenny', 'Aria', 'Ava', 'Samantha', 'Daniel'];
+    for (const name of generalNames) {
       const found = this.voices.find((v) => isEnglish(v) && v.name.includes(name));
       if (found) return found;
     }
 
+    // Tier 5: Any US English or English voice
     const usVoice = this.voices.find((v) => v.lang === 'en-US' || v.lang === 'en_US');
     if (usVoice) return usVoice;
 
     return this.voices.find(isEnglish) || null;
   }
 
-  // Synthesized Web Audio Earcons (subtle, gentle acoustic feedback)
   playEarcon(type) {
     try {
       if (!this.earconCtx) {
@@ -155,7 +179,7 @@ export class SpeechEngine {
         this.earconCtx.resume();
       }
       const ctx = this.earconCtx;
-      const playTone = (freq, startOffset, duration, peakGain = 0.11) => {
+      const playTone = (freq, startOffset, duration, peakGain = 0.10) => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         const now = ctx.currentTime + startOffset;
@@ -171,17 +195,17 @@ export class SpeechEngine {
       };
 
       if (type === 'match') {
-        playTone(523.25, 0.00, 0.09, 0.10);
-        playTone(659.25, 0.07, 0.09, 0.10);
-        playTone(783.99, 0.14, 0.14, 0.12);
+        playTone(523.25, 0.00, 0.09, 0.09);
+        playTone(659.25, 0.07, 0.09, 0.09);
+        playTone(783.99, 0.14, 0.13, 0.11);
       } else if (type === 'toggle') {
-        playTone(587.33, 0.00, 0.10, 0.10);
+        playTone(587.33, 0.00, 0.10, 0.09);
       } else if (type === 'repeat') {
-        playTone(659.25, 0.00, 0.08, 0.10);
-        playTone(783.99, 0.07, 0.14, 0.11);
+        playTone(659.25, 0.00, 0.08, 0.09);
+        playTone(783.99, 0.07, 0.13, 0.10);
       }
     } catch {
-      // AudioContext unavailable or blocked before user gesture
+      // AudioContext unavailable or blocked prior to user gesture
     }
   }
 
@@ -193,34 +217,56 @@ export class SpeechEngine {
     this.cb.onAudioLevel?.(0);
   }
 
+  clearFallbackHighlightTimers() {
+    for (const t of this.fallbackHighlightTimers) clearTimeout(t);
+    this.fallbackHighlightTimers = [];
+  }
+
   clearSpeechTimers() {
     clearTimeout(this.speechCooldownTimer);
     clearTimeout(this.speechStepTimer);
     clearTimeout(this.speechWatchdogTimer);
     clearTimeout(this.recognitionRestartTimer);
+    clearTimeout(this.toggleResumeTimer);
+    this.clearFallbackHighlightTimers();
   }
 
-  beginSpeakingLock() {
+  isTokenCurrent(token) {
+    return token === this.playbackToken;
+  }
+
+  /**
+   * Acquires exclusive speaking lock: pauses dictation and suspends mic capture immediately.
+   * Returns a monotonic token that must be passed to releaseLock / speak methods.
+   */
+  acquireLock() {
+    const token = ++this.playbackToken;
     this.clearSpeechTimers();
     this.isSpeaking = true;
     this.speechDetected = false;
+    this.activeUtterance = null;
     this.pauseRecognition();
     this.resetAudioBuffers();
     if (this.micAudioCtx && this.micAudioCtx.state === 'running') {
       this.micAudioCtx.suspend().catch(() => {});
     }
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    return token;
   }
 
-  endSpeakingLock(seq) {
-    if (seq !== this.speechPlaybackSeq) return;
+  releaseLock(token) {
+    if (token !== this.playbackToken) return;
     clearTimeout(this.speechWatchdogTimer);
     clearTimeout(this.speechStepTimer);
+    this.clearFallbackHighlightTimers();
     this.activeUtterance = null;
     clearTimeout(this.speechCooldownTimer);
 
-    // 750ms hardware echo cooldown prevents speaker tail / Bluetooth lag from re-triggering mic
+    // 750ms hardware echo cooldown prevents speaker tail / Bluetooth lag from triggering dictation
     this.speechCooldownTimer = setTimeout(() => {
-      if (seq !== this.speechPlaybackSeq) return;
+      if (token !== this.playbackToken) return;
       this.isSpeaking = false;
       this.speechDetected = false;
       this.resetAudioBuffers();
@@ -238,45 +284,41 @@ export class SpeechEngine {
   }
 
   cancelSpeech() {
-    this.speechPlaybackSeq++;
+    this.playbackToken++;
     this.clearSpeechTimers();
     this.activeUtterance = null;
     this.isSpeaking = false;
     this.speechDetected = false;
     this.cb.onClearHighlights?.();
-    if ('speechSynthesis' in window) {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
   }
 
   /**
-   * Speaks a queue of short utterances one at a time.
-   * Guarantees exact letter-by-letter visual sync on every browser/voice
-   * and eliminates Chrome's 15-second SpeechSynthesis hang bug.
+   * Executes a sequence of utterances while holding the active playback lock.
+   * Supports both per-step highlighting (local voices) and boundary-synced fluent phrases (remote voices).
    */
-  runUtteranceQueue(steps, rate, { onFlashEnd = false } = {}) {
-    const mySeq = ++this.speechPlaybackSeq;
-    this.beginSpeakingLock();
+  runUtteranceQueue(steps, rate, existingToken = null) {
+    const token = existingToken !== null && this.isTokenCurrent(existingToken)
+      ? existingToken
+      : this.acquireLock();
+
     this.cb.onClearHighlights?.();
 
-    if (!('speechSynthesis' in window) || !steps.length) {
-      this.endSpeakingLock(mySeq);
-      return mySeq;
+    if (typeof window === 'undefined' || !('speechSynthesis' in window) || !steps.length) {
+      this.releaseLock(token);
+      return token;
     }
 
     window.speechSynthesis.cancel();
     const chosenVoice = this.getBestVoice();
 
     const speakStep = (index) => {
-      if (mySeq !== this.speechPlaybackSeq) return;
+      if (token !== this.playbackToken) return;
 
       if (index >= steps.length) {
-        if (onFlashEnd) {
-          this.cb.onFlashAll?.(mySeq);
-        } else {
-          this.cb.onClearHighlights?.();
-        }
-        this.endSpeakingLock(mySeq);
+        this.releaseLock(token);
         return;
       }
 
@@ -290,10 +332,13 @@ export class SpeechEngine {
       utterance.pitch = 1.0;
 
       let stepDone = false;
+      let boundaryTriggered = false;
+
       const advance = () => {
-        if (stepDone || mySeq !== this.speechPlaybackSeq) return;
+        if (stepDone || token !== this.playbackToken) return;
         stepDone = true;
         clearTimeout(this.speechWatchdogTimer);
+        this.clearFallbackHighlightTimers();
 
         if (step.pauseAfterMs > 0) {
           this.speechStepTimer = setTimeout(() => speakStep(index + 1), step.pauseAfterMs);
@@ -303,28 +348,59 @@ export class SpeechEngine {
       };
 
       utterance.onstart = () => {
-        if (mySeq !== this.speechPlaybackSeq) return;
+        if (token !== this.playbackToken) return;
         this.isSpeaking = true;
+
         if (step.charIdx === 'all') {
-          this.cb.onFlashAll?.(mySeq);
+          this.cb.onFlashAll?.(token);
         } else if (typeof step.charIdx === 'number' && step.charIdx >= 0) {
           this.cb.onHighlightLetter?.(step.charIdx);
-        } else {
+        } else if (!step.charMap) {
           this.cb.onClearHighlights?.();
         }
+
+        // Schedule calibrated fallback highlights for remote fluent phrases if voice drops onboundary
+        if (step.fallbackSchedule) {
+          this.clearFallbackHighlightTimers();
+          for (const item of step.fallbackSchedule) {
+            const t = setTimeout(() => {
+              if (!boundaryTriggered && !stepDone && token === this.playbackToken) {
+                if (item.charIdx === 'all') this.cb.onFlashAll?.(token);
+                else this.cb.onHighlightLetter?.(item.charIdx);
+              }
+            }, item.delayMs);
+            this.fallbackHighlightTimers.push(t);
+          }
+        }
       };
+
+      if (step.charMap && step.charMap.length > 0) {
+        utterance.onboundary = (event) => {
+          if (token !== this.playbackToken || typeof event.charIndex !== 'number') return;
+          for (let m = step.charMap.length - 1; m >= 0; m--) {
+            if (event.charIndex >= step.charMap[m].start) {
+              boundaryTriggered = true;
+              const target = step.charMap[m].charIdx;
+              if (target === 'all') this.cb.onFlashAll?.(token);
+              else this.cb.onHighlightLetter?.(target);
+              break;
+            }
+          }
+        };
+      }
 
       utterance.onend = advance;
       utterance.onerror = advance;
 
       // Per-step bounded watchdog (never cuts off active speech prematurely)
       const startedAt = Date.now();
-      const baseWait = Math.max(2600, Math.round((step.text.length * 190) / utterance.rate) + 1500);
+      const maxCeilingMs = Math.max(10000, Math.round((step.text.length * 320) / utterance.rate) + 4000);
+      const baseWait = Math.max(2600, Math.round((step.text.length * 210) / utterance.rate) + 1800);
       const armWatchdog = (ms) => {
         clearTimeout(this.speechWatchdogTimer);
         this.speechWatchdogTimer = setTimeout(() => {
-          if (stepDone || mySeq !== this.speechPlaybackSeq) return;
-          if (window.speechSynthesis.speaking && Date.now() - startedAt < 10000) {
+          if (stepDone || token !== this.playbackToken) return;
+          if (window.speechSynthesis.speaking && Date.now() - startedAt < maxCeilingMs) {
             armWatchdog(1000);
           } else {
             advance();
@@ -337,15 +413,25 @@ export class SpeechEngine {
     };
 
     speakStep(0);
-    return mySeq;
+    return token;
   }
 
-  speakWord(word, { rate = 0.92, phonicsMode = false } = {}) {
-    if (!word) return;
-    const trimmed = word.trim();
-    const steps = [];
+  /**
+   * Hybrid strategy:
+   * - Local voices (localService !== false): chunked per-letter queue for exact onstart sync & zero cutoff.
+   * - Remote cloud voices (localService === false, e.g., Google US English): fluent phrase chunks
+   *   to avoid per-letter network round-trip lag while syncing via onboundary + fallback timing.
+   */
+  speakWord(word, { rate = 0.92, phonicsMode = false, token = null } = {}) {
+    if (!word) {
+      if (token !== null) this.releaseLock(token);
+      return token;
+    }
 
-    // Build alphanumeric character list along with word-boundary pause markers
+    const trimmed = word.trim();
+    const chosenVoice = this.getBestVoice();
+    const isRemoteVoice = Boolean(chosenVoice && chosenVoice.localService === false);
+
     const tokens = [];
     let charIdx = 0;
     for (let i = 0; i < trimmed.length; i++) {
@@ -357,46 +443,116 @@ export class SpeechEngine {
       }
     }
 
-    if (!phonicsMode) {
-      steps.push({ text: `${trimmed} is spelled`, charIdx: -1, pauseAfterMs: 140 });
-      for (const t of tokens) {
-        steps.push({
-          text: t.ch.toUpperCase(),
-          charIdx: t.charIdx,
-          pauseAfterMs: t.isEndOfSubword ? 260 : 75
-        });
+    if (!isRemoteVoice) {
+      const steps = [];
+      if (!phonicsMode) {
+        steps.push({ text: `${trimmed} is spelled`, charIdx: -1, pauseAfterMs: 120 });
+        for (const t of tokens) {
+          steps.push({
+            text: formatSpokenLetter(t.ch),
+            charIdx: t.charIdx,
+            pauseAfterMs: t.isEndOfSubword ? 240 : 40
+          });
+        }
+        steps.push({ text: trimmed, charIdx: 'all', pauseAfterMs: 0 });
+      } else {
+        for (const t of tokens) {
+          const lower = t.ch.toLowerCase();
+          const sound = PHONICS_SOUNDS[lower] || lower;
+          steps.push({
+            text: `${t.ch.toUpperCase()} says ${sound}.`,
+            charIdx: t.charIdx,
+            pauseAfterMs: t.isEndOfSubword ? 240 : 80
+          });
+        }
+        steps.push({ text: trimmed, charIdx: 'all', pauseAfterMs: 0 });
       }
-      steps.push({ text: trimmed, charIdx: 'all', pauseAfterMs: 0 });
-    } else {
+      return this.runUtteranceQueue(steps, rate, token);
+    }
+
+    // Remote streaming voice path: fluent chunks (keeps each chunk under ~110 chars to avoid Chrome 15s cutoff)
+    const steps = [];
+    if (!phonicsMode) {
+      const wordParts = trimmed.split(/\s+/);
+      const spelledOut = wordParts.map((w) => w.toUpperCase().split('').join(', ')).join('. ');
+      const prefix = `${trimmed} is spelled `;
+      const fullText = `${prefix}${spelledOut}. ${trimmed}.`;
+
+      const charMap = [];
+      let searchPos = prefix.length;
       for (const t of tokens) {
-        const lower = t.ch.toLowerCase();
-        const sound = PHONICS_SOUNDS[lower] || lower;
-        steps.push({
-          text: `${t.ch.toUpperCase()} says ${sound}`,
-          charIdx: t.charIdx,
-          pauseAfterMs: t.isEndOfSubword ? 260 : 120
+        const found = fullText.toUpperCase().indexOf(t.ch.toUpperCase(), searchPos);
+        if (found !== -1) {
+          charMap.push({ charIdx: t.charIdx, start: found });
+          searchPos = found + 1;
+        }
+      }
+      const endWordPos = fullText.lastIndexOf(trimmed);
+      if (endWordPos > searchPos) {
+        charMap.push({ charIdx: 'all', start: endWordPos });
+      }
+
+      const leadInMs = Math.max(650, Math.round((prefix.length * 60) / rate));
+      const perLetterMs = Math.round(480 / rate);
+      const fallbackSchedule = tokens.map((t, idx) => ({
+        charIdx: t.charIdx,
+        delayMs: leadInMs + idx * perLetterMs
+      }));
+      fallbackSchedule.push({
+        charIdx: 'all',
+        delayMs: leadInMs + tokens.length * perLetterMs + Math.round(250 / rate)
+      });
+
+      steps.push({ text: fullText, charIdx: -1, charMap, fallbackSchedule, pauseAfterMs: 0 });
+    } else {
+      // Group phonics into chunks of up to 4 letters so remote voices stay fluent AND well under 15s
+      const CHUNK_SIZE = 4;
+      for (let i = 0; i < tokens.length; i += CHUNK_SIZE) {
+        const slice = tokens.slice(i, i + CHUNK_SIZE);
+        let text = '';
+        const charMap = [];
+        const fallbackSchedule = [];
+        const perSegMs = Math.round(1250 / rate);
+
+        slice.forEach((t, localIdx) => {
+          const lower = t.ch.toLowerCase();
+          const sound = PHONICS_SOUNDS[lower] || lower;
+          const seg = `${t.ch.toUpperCase()} says ${sound}`;
+          const start = text ? text.length + 2 : 0;
+          text += (text ? '. ' : '') + seg;
+          charMap.push({ charIdx: t.charIdx, start });
+          fallbackSchedule.push({ charIdx: t.charIdx, delayMs: localIdx * perSegMs });
         });
+
+        steps.push({ text: `${text}.`, charIdx: -1, charMap, fallbackSchedule, pauseAfterMs: 100 });
       }
       steps.push({ text: trimmed, charIdx: 'all', pauseAfterMs: 0 });
     }
 
-    return this.runUtteranceQueue(steps, rate, { onFlashEnd: false });
+    return this.runUtteranceQueue(steps, rate, token);
   }
 
   speakSingleLetter(ch, charIdx, { rate = 0.92, phonicsMode = false } = {}) {
     if (!ch) return;
     const upper = ch.toUpperCase();
     const lower = ch.toLowerCase();
-    const text = phonicsMode ? `${upper} says ${PHONICS_SOUNDS[lower] || lower}` : upper;
-    return this.runUtteranceQueue([{ text, charIdx, pauseAfterMs: 120 }], rate, { onFlashEnd: false });
+    const text = phonicsMode ? `${upper} says ${PHONICS_SOUNDS[lower] || lower}.` : formatSpokenLetter(upper);
+    return this.runUtteranceQueue([{ text, charIdx, pauseAfterMs: 100 }], rate);
   }
 
-  speakMessage(text, rate = 0.92) {
-    if (!text) return;
-    return this.runUtteranceQueue([{ text, charIdx: -1, pauseAfterMs: 0 }], rate, { onFlashEnd: false });
+  speakSlowWord(word) {
+    if (!word) return;
+    return this.runUtteranceQueue([{ text: word.trim(), charIdx: 'all', rate: 0.68, pauseAfterMs: 0 }], 0.68);
   }
 
-  // Starts either native Web Speech API or off-main-thread Whisper fallback
+  speakMessage(text, rate = 0.92, token = null) {
+    if (!text) {
+      if (token !== null) this.releaseLock(token);
+      return token;
+    }
+    return this.runUtteranceQueue([{ text, charIdx: -1, pauseAfterMs: 0 }], rate, token);
+  }
+
   init() {
     const isFirefox = /firefox|fxios/i.test(navigator.userAgent);
     const hasNative = !isFirefox && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
@@ -521,8 +677,7 @@ export class SpeechEngine {
     if (!this.recognition || !this.isEnabled || this.isRecognizing || this.isSpeaking) return;
     try {
       this.recognition.start();
-    } catch (err) {
-      // Transient InvalidStateError when abort/stop hasn't finished yet — bounded retry
+    } catch {
       this.restartBackoffMs = Math.min(2000, Math.round(this.restartBackoffMs * 1.5));
       clearTimeout(this.recognitionRestartTimer);
       this.recognitionRestartTimer = setTimeout(() => {
@@ -551,9 +706,9 @@ export class SpeechEngine {
     } catch {}
   }
 
-  // Off-main-thread Whisper fallback
+  // Off-main-thread Whisper fallback with clean retry recovery on failure
   switchToWhisper() {
-    if (this.whisperInitStarted) return;
+    if (this.whisperInitStarted || this.whisperReady) return;
     this.useWhisper = true;
     this.whisperInitStarted = true;
     this.cb.onWhisperProgress?.(0, 'Connecting to speech model...');
@@ -561,6 +716,16 @@ export class SpeechEngine {
     try {
       const worker = new Worker(new URL('./whisper-worker.js', import.meta.url), { type: 'module' });
       this.whisperWorker = worker;
+
+      const failInit = (msg) => {
+        this.whisperInitStarted = false;
+        this.whisperReady = false;
+        try {
+          worker.terminate();
+        } catch {}
+        if (this.whisperWorker === worker) this.whisperWorker = null;
+        this.cb.onWhisperError?.(msg);
+      };
 
       worker.onmessage = (event) => {
         const msg = event.data;
@@ -576,7 +741,7 @@ export class SpeechEngine {
           this.handleWhisperTranscript(msg.text);
         } else if (msg.type === 'error') {
           if (msg.stage === 'init') {
-            this.cb.onWhisperError?.(msg.message);
+            failInit(msg.message);
           } else {
             this.isTranscribing = false;
           }
@@ -584,17 +749,22 @@ export class SpeechEngine {
       };
 
       worker.onerror = (err) => {
-        this.cb.onWhisperError?.(err?.message || 'Worker failed');
+        failInit(err?.message || 'Worker failed');
       };
 
       worker.postMessage({ type: 'init' });
     } catch (err) {
+      this.whisperInitStarted = false;
       this.cb.onWhisperError?.(err?.message || 'Speech engine unavailable');
     }
   }
 
   async startWhisperMic() {
     if (!this.isEnabled) return;
+    if (!this.whisperReady) {
+      this.switchToWhisper();
+      return;
+    }
 
     try {
       if (!this.micAudioCtx) {
@@ -615,7 +785,6 @@ export class SpeechEngine {
 
       if (!this.micGraphReady) {
         this.micSource = this.micAudioCtx.createMediaStreamSource(this.micStream);
-        // Zero-gain node keeps audio graph alive without routing mic back to speakers
         this.micMuteGain = this.micAudioCtx.createGain();
         this.micMuteGain.gain.value = 0;
 
@@ -671,7 +840,6 @@ export class SpeechEngine {
       return;
     }
 
-    // Visual acoustic meter (normalized 0..1)
     const normalized = Math.min(1, rms / 0.08);
     this.cb.onAudioLevel?.(normalized > 0.08 ? normalized : 0);
 
@@ -728,7 +896,9 @@ export class SpeechEngine {
   }
 
   toggleEnabled() {
+    clearTimeout(this.toggleResumeTimer);
     this.playEarcon('toggle');
+
     if (this.isEnabled) {
       this.isEnabled = false;
       this.cancelSpeech();
@@ -742,7 +912,7 @@ export class SpeechEngine {
 
     this.isEnabled = true;
     // Wait 240ms after toggle chime so chime does not trigger microphone
-    setTimeout(() => {
+    this.toggleResumeTimer = setTimeout(() => {
       if (!this.isEnabled || this.isSpeaking) return;
       if (this.useWhisper) {
         this.startWhisperMic();

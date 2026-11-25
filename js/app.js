@@ -1,11 +1,12 @@
 // Speak N Spell — Main Application Controller
 
 import { getSyllables, checkIsProfane } from './syllables.js';
-import { resolveWordMedia } from './media.js';
+import { PICTURE_CATALOG, peekCachedMedia, resolveWordMedia } from './media.js';
 import { SpeechEngine, SPEEDS } from './speech-engine.js';
 import { renderMascotSvg } from './mascot.js';
 
 // DOM Elements
+const srAnnouncer = document.getElementById('srAnnouncer');
 const displayArea = document.getElementById('displayArea');
 const upperEl = document.getElementById('resultUpper');
 const lowerEl = document.getElementById('resultLower');
@@ -25,9 +26,14 @@ const heardHint = document.getElementById('heardHint');
 const voiceMeter = document.getElementById('voiceMeter');
 const voiceBars = voiceMeter ? Array.from(voiceMeter.querySelectorAll('span')) : [];
 const infoEl = document.getElementById('info');
+const offlineBadge = document.getElementById('offlineBadge');
 const recentTray = document.getElementById('recentTray');
 
+const picturesBtn = document.getElementById('picturesBtn');
 const repeatBtn = document.getElementById('repeatBtn');
+const practiceBtn = document.getElementById('practiceBtn');
+const practiceIcon = document.getElementById('practiceIcon');
+const practiceLabel = document.getElementById('practiceLabel');
 const speedBtn = document.getElementById('speedBtn');
 const speedLabel = document.getElementById('speedLabel');
 const phonicsBtn = document.getElementById('phonicsBtn');
@@ -38,6 +44,13 @@ const fullscreenIcon = document.getElementById('fullscreenIcon');
 const fullscreenLabel = document.getElementById('fullscreenLabel');
 const reloadBtn = document.getElementById('reloadBtn');
 
+// Picture & Coloring Dialog nodes
+const pictureDialog = document.getElementById('pictureDialog');
+const closePicturesBtn = document.getElementById('closePicturesBtn');
+const pictureTabs = document.getElementById('pictureTabs');
+const pictureGrid = document.getElementById('pictureGrid');
+
+// Whisper Loading Overlay nodes
 const loadingOverlay = document.getElementById('loadingOverlay');
 const loadingMascot = document.getElementById('loadingMascot');
 const loadingStatus = document.getElementById('loadingStatus');
@@ -61,6 +74,8 @@ let currentDestinationUrl = 'https://en.wikipedia.org/wiki/Wonderful';
 let currentIconUrl = null;
 let currentSpeedIndex = 0;
 let isPhonicsMode = false;
+let isPracticeHidden = false;
+let activePictureCategory = PICTURE_CATALOG[0]?.category || 'Fruit';
 let hasSpelledAny = false;
 let recentWords = [];
 
@@ -73,6 +88,14 @@ let wakeLockSentinel = null;
 
 // Cached canvas for fast font width measurement
 const textMeasureCanvas = document.createElement('canvas');
+
+function announceSR(text) {
+  if (!srAnnouncer || !text) return;
+  srAnnouncer.textContent = '';
+  requestAnimationFrame(() => {
+    srAnnouncer.textContent = text;
+  });
+}
 
 // --- Mascot & Prompt Status ---
 function setMascotState(state, message, { isError = false, heard = '' } = {}) {
@@ -89,7 +112,7 @@ function setMascotState(state, message, { isError = false, heard = '' } = {}) {
       speechToggle.setAttribute('aria-label', 'Speech mode off');
       speechToggle.setAttribute('aria-pressed', 'false');
     } else {
-      speechToggle.title = 'Did not match command — try saying Spell followed by a word';
+      speechToggle.title = 'Did not match command — say Spell followed by a word';
       speechToggle.setAttribute('aria-label', 'Did not match spelling command');
     }
   }
@@ -140,6 +163,11 @@ function updateVoiceMeter(level) {
   }
 }
 
+function updateOnlineStatus() {
+  if (!offlineBadge) return;
+  offlineBadge.hidden = navigator.onLine !== false;
+}
+
 // --- Typography & Responsive Sizing ---
 function resizeElementText(element, targetWidth, isMobileSplit) {
   if (!element) return;
@@ -160,7 +188,6 @@ function resizeElementText(element, targetWidth, isMobileSplit) {
   newFontSize = Math.max(24, newFontSize);
   element.style.fontSize = `${newFontSize}px`;
 
-  // Final DOM safety clamp so long words never clip horizontally
   const actualWidth = element.scrollWidth;
   if (actualWidth > targetWidth && actualWidth > 0) {
     element.style.fontSize = `${Math.max(20, newFontSize * (targetWidth / actualWidth))}px`;
@@ -187,6 +214,49 @@ function scheduleResize() {
   });
 }
 
+// --- Practice Mode (Cover & Check Active Recall) ---
+function setPracticeHidden(hidden, { speakOnReveal = false } = {}) {
+  isPracticeHidden = Boolean(hidden);
+  document.body.classList.toggle('practice-hidden', isPracticeHidden);
+
+  document.querySelectorAll('.letter-glyph').forEach((el) => {
+    el.classList.toggle('letter-hidden', isPracticeHidden);
+    el.classList.remove('letter-peeked');
+  });
+
+  if (practiceBtn && practiceLabel && practiceIcon) {
+    practiceBtn.classList.toggle('active', isPracticeHidden);
+    practiceBtn.setAttribute('aria-pressed', String(isPracticeHidden));
+    practiceLabel.textContent = isPracticeHidden ? 'Reveal' : 'Practice';
+    const title = isPracticeHidden
+      ? 'Reveal full word to check spelling (H)'
+      : 'Cover word to practice spelling (H)';
+    practiceBtn.title = title;
+    practiceBtn.setAttribute('aria-label', title);
+
+    practiceIcon.innerHTML = isPracticeHidden
+      ? '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>'
+      : '<path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" x2="22" y1="2" y2="22"/>';
+  }
+
+  if (isPracticeHidden) {
+    speechEngine.cancelSpeech();
+    if (promptText) promptText.textContent = 'Practice mode — click any blank for a hint';
+    announceSR(`Practice mode on. ${currentWord.replace(/[^A-Za-z0-9]/g, '').length} hidden letters. Select any slot for a hint.`);
+  } else {
+    if (speechEngine.isEnabled) setMascotState('listening');
+    if (speakOnReveal && currentWord && currentWord.toUpperCase() !== 'NO') {
+      handleRepeat();
+    }
+  }
+}
+
+function togglePracticeMode() {
+  if (!currentWord || currentWord.toUpperCase() === 'NO') return;
+  const nextHidden = !isPracticeHidden;
+  setPracticeHidden(nextHidden, { speakOnReveal: !nextHidden });
+}
+
 // --- Interactive Letter Rendering & Sync Highlighting ---
 function clearLetterHighlights() {
   clearTimeout(flashClearTimer);
@@ -206,13 +276,13 @@ function highlightLetterAtIndex(idx) {
   });
 }
 
-function flashAllLetters(seq) {
+function flashAllLetters(token) {
   clearTimeout(flashClearTimer);
   document.querySelectorAll('.letter-glyph').forEach((el) => {
     el.classList.add('highlighted-letter');
   });
   flashClearTimer = setTimeout(() => {
-    if (seq === speechEngine.speechPlaybackSeq) {
+    if (speechEngine.isTokenCurrent(token)) {
       clearLetterHighlights();
     }
   }, 550);
@@ -220,7 +290,19 @@ function flashAllLetters(seq) {
 
 function onLetterTap(ch, idx) {
   const sel = window.getSelection ? window.getSelection().toString() : '';
-  if (sel.length > 0) return; // User is selecting text, do not interrupt with click
+  if (sel.length > 0) return;
+
+  // In Practice mode, tapping a covered slot peeks just that letter as a gentle hint
+  if (isPracticeHidden) {
+    const matching = document.querySelectorAll(`.letter-glyph[data-char-idx="${idx}"]`);
+    matching.forEach((el) => el.classList.add('letter-peeked'));
+
+    const remainingHidden = document.querySelectorAll('#resultUpper .letter-glyph.letter-hidden:not(.letter-peeked)');
+    if (remainingHidden.length === 0) {
+      setPracticeHidden(false, { speakOnReveal: false });
+    }
+  }
+
   speechEngine.speakSingleLetter(ch, idx, {
     rate: getSpeechRate(),
     phonicsMode: isPhonicsMode
@@ -374,6 +456,111 @@ function updatePrintWorksheet(word, iconUrl) {
   }
 }
 
+async function printCurrentWorksheet() {
+  // Ensure the coloring SVG/image is decoded before opening print dialog
+  if (currentIconUrl && printArtImg && !printArtImg.complete) {
+    await Promise.race([
+      printArtImg.decode().catch(() => {}),
+      new Promise((resolve) => setTimeout(resolve, 1200))
+    ]);
+  }
+  window.print();
+}
+
+// --- Picture & Coloring Shelf Dialog ---
+function renderPictureDialog() {
+  if (!pictureTabs || !pictureGrid) return;
+
+  pictureTabs.innerHTML = '';
+  for (const group of PICTURE_CATALOG) {
+    const tab = document.createElement('button');
+    tab.type = 'button';
+    tab.role = 'tab';
+    const isActive = group.category === activePictureCategory;
+    tab.className = `dialog-tab${isActive ? ' active' : ''}`;
+    tab.setAttribute('aria-selected', String(isActive));
+    tab.textContent = group.category;
+    tab.addEventListener('click', () => {
+      activePictureCategory = group.category;
+      renderPictureDialog();
+    });
+    pictureTabs.appendChild(tab);
+  }
+
+  const currentGroup =
+    PICTURE_CATALOG.find((g) => g.category === activePictureCategory) || PICTURE_CATALOG[0];
+  pictureGrid.classList.toggle('cols-3', currentGroup.items.length === 6);
+  pictureGrid.innerHTML = '';
+
+  for (const item of currentGroup.items) {
+    const card = document.createElement('div');
+    card.className = 'picture-card';
+    card.setAttribute('role', 'button');
+    card.setAttribute('tabindex', '0');
+    card.setAttribute('aria-label', `Spell ${item.word}`);
+
+    const img = document.createElement('img');
+    img.src = item.url;
+    img.alt = '';
+    img.loading = 'lazy';
+
+    const label = document.createElement('span');
+    label.className = 'picture-card-word';
+    label.textContent = item.word;
+
+    const printAction = document.createElement('button');
+    printAction.type = 'button';
+    printAction.className = 'picture-card-print';
+    printAction.title = `Print coloring sheet for ${item.word}`;
+    printAction.setAttribute('aria-label', `Print coloring sheet for ${item.word}`);
+    printAction.innerHTML =
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/></svg>';
+
+    printAction.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closePictureDialog();
+      handleWordSelected(item.word, { fromCatalog: true, presetIconUrl: item.url, autoPrint: true });
+    });
+
+    const selectItem = () => {
+      closePictureDialog();
+      handleWordSelected(item.word, { fromCatalog: true, presetIconUrl: item.url });
+    };
+
+    card.addEventListener('click', selectItem);
+    card.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        selectItem();
+      }
+    });
+
+    card.appendChild(printAction);
+    card.appendChild(img);
+    card.appendChild(label);
+    pictureGrid.appendChild(card);
+  }
+}
+
+function openPictureDialog() {
+  if (!pictureDialog) return;
+  renderPictureDialog();
+  if (typeof pictureDialog.showModal === 'function') {
+    if (!pictureDialog.open) pictureDialog.showModal();
+  } else {
+    pictureDialog.setAttribute('open', '');
+  }
+}
+
+function closePictureDialog() {
+  if (!pictureDialog) return;
+  if (typeof pictureDialog.close === 'function' && pictureDialog.open) {
+    pictureDialog.close();
+  } else {
+    pictureDialog.removeAttribute('open');
+  }
+}
+
 // --- Recent Words Session Tray ---
 function loadRecentWords() {
   try {
@@ -498,82 +685,117 @@ function togglePhonics() {
   updatePhonicsUI();
 }
 
-// --- Core Word Flow (Race-Free & Immediately Echo-Locked) ---
-async function handleWordSelected(rawWord, { fromRecent = false } = {}) {
+// --- Core Word Flow (Race-Free, Leak-Free Lock & Zero Stale Image Flash) ---
+async function handleWordSelected(
+  rawWord,
+  { fromRecent = false, fromCatalog = false, presetIconUrl = null, autoPrint = false } = {}
+) {
   const myMatchSeq = ++spellingMatchSeq;
   if (activeMediaController) activeMediaController.abort();
   activeMediaController = new AbortController();
   const { signal } = activeMediaController;
 
-  // Lock microphone immediately so chimes/speech never feed back into dictation
-  speechEngine.speechPlaybackSeq++;
-  const lockSeq = speechEngine.speechPlaybackSeq;
-  speechEngine.beginSpeakingLock();
+  const lockToken = speechEngine.acquireLock();
 
-  const word = rawWord.trim();
-  if (!word) {
-    speechEngine.endSpeakingLock(lockSeq);
-    return;
-  }
-
-  if (!fromRecent) {
-    const isBad = await checkIsProfane(word, signal);
-    if (myMatchSeq !== spellingMatchSeq) return;
-
-    if (isBad) {
-      currentWord = 'NO';
-      setDisplayMode(false);
-      upperEl.textContent = 'NO';
-      lowerEl.textContent = 'no';
-      clearLetterHighlights();
-      updateSyllablesUI('');
-      updateReferenceUI('', '', '');
-      updatePrintWorksheet('', null);
-      scheduleResize();
-      setMascotState('muted', "Let's pick a different word", { isError: true });
-      speechEngine.speakMessage("Let's pick a different word.", getSpeechRate());
+  try {
+    const word = String(rawWord || '').trim();
+    if (!word) {
+      speechEngine.releaseLock(lockToken);
       return;
     }
-  }
 
-  currentWord = word;
-  dockBrandHeader();
-  renderWordLetters(word);
-  updateSyllablesUI(word);
-  updatePrintWorksheet(word, null);
-  recordRecentWord(word);
-  setMascotState('listening');
-  scheduleResize();
+    if (!fromRecent && !fromCatalog) {
+      const isBad = await checkIsProfane(word, signal);
+      if (myMatchSeq !== spellingMatchSeq) {
+        speechEngine.releaseLock(lockToken);
+        return;
+      }
 
-  // Deduplicated parallel media + Wikipedia lookup (non-blocking)
-  resolveWordMedia(word, signal).then((media) => {
-    if (!media || myMatchSeq !== spellingMatchSeq) return;
-    updateReferenceUI(media.referenceUrl, media.serviceName, word);
-    setDisplayMode(!!media.iconUrl, media.iconUrl, { word, isLineArt: media.isLineArt });
-  });
+      if (isBad) {
+        if (isPracticeHidden) setPracticeHidden(false);
+        currentWord = 'NO';
+        setDisplayMode(false);
+        upperEl.textContent = 'NO';
+        lowerEl.textContent = 'no';
+        clearLetterHighlights();
+        updateSyllablesUI('');
+        updateReferenceUI('', '', '');
+        updatePrintWorksheet('', null);
+        scheduleResize();
+        setMascotState('muted', "Let's pick a different word", { isError: true });
+        speechEngine.speakMessage("Let's pick a different word.", getSpeechRate(), lockToken);
+        return;
+      }
+    }
 
-  speechEngine.playEarcon(fromRecent ? 'repeat' : 'match');
-  setTimeout(() => {
-    if (myMatchSeq !== spellingMatchSeq || lockSeq !== speechEngine.speechPlaybackSeq) return;
-    speechEngine.speakWord(word, {
-      rate: getSpeechRate(),
-      phonicsMode: isPhonicsMode
+    if (isPracticeHidden) setPracticeHidden(false);
+
+    currentWord = word;
+    dockBrandHeader();
+    renderWordLetters(word);
+    updateSyllablesUI(word);
+    recordRecentWord(word);
+    setMascotState('listening');
+    announceSR(`Spelling ${word}: ${word.toLowerCase().split('').join(' ')}`);
+
+    // Immediately show cached/preset illustration OR clear stale illustration from previous word
+    const cached = presetIconUrl
+      ? { iconUrl: presetIconUrl, isLineArt: true, referenceUrl: '', serviceName: '' }
+      : peekCachedMedia(word);
+
+    if (cached && cached.iconUrl) {
+      setDisplayMode(true, cached.iconUrl, { word, isLineArt: cached.isLineArt });
+      if (cached.referenceUrl) {
+        updateReferenceUI(cached.referenceUrl, cached.serviceName, word);
+      }
+    } else {
+      setDisplayMode(false, null, { word });
+    }
+
+    scheduleResize();
+
+    // Deduplicated parallel media & reference lookup
+    resolveWordMedia(word, signal).then((media) => {
+      if (!media || myMatchSeq !== spellingMatchSeq) return;
+      updateReferenceUI(media.referenceUrl, media.serviceName, word);
+      const finalIcon = presetIconUrl || media.iconUrl;
+      const finalLineArt = presetIconUrl ? true : media.isLineArt;
+      setDisplayMode(!!finalIcon, finalIcon, { word, isLineArt: finalLineArt });
     });
-  }, 200);
+
+    if (autoPrint) {
+      speechEngine.releaseLock(lockToken);
+      await printCurrentWorksheet();
+      return;
+    }
+
+    speechEngine.playEarcon(fromRecent ? 'repeat' : 'match');
+    setTimeout(() => {
+      if (myMatchSeq !== spellingMatchSeq || !speechEngine.isTokenCurrent(lockToken)) return;
+      speechEngine.speakWord(word, {
+        rate: getSpeechRate(),
+        phonicsMode: isPhonicsMode,
+        token: lockToken
+      });
+    }, 180);
+  } catch (err) {
+    console.warn('handleWordSelected error:', err);
+    speechEngine.releaseLock(lockToken);
+  }
 }
 
 function handleRepeat() {
   if (!currentWord || currentWord.toUpperCase() === 'NO') return;
-  const lockSeq = ++speechEngine.speechPlaybackSeq;
-  speechEngine.beginSpeakingLock();
+  const lockToken = speechEngine.acquireLock();
   speechEngine.playEarcon('repeat');
   setTimeout(() => {
-    if (lockSeq !== speechEngine.speechPlaybackSeq) return;
+    if (!speechEngine.isTokenCurrent(lockToken)) return;
     speechEngine.speakWord(currentWord, {
       rate: getSpeechRate(),
-      phonicsMode: isPhonicsMode
+      phonicsMode: isPhonicsMode,
+      token: lockToken
     });
-  }, 180);
+  }, 160);
 }
 
 // --- Wake Lock & Fullscreen ---
@@ -642,9 +864,10 @@ const speechEngine = new SpeechEngine({
   },
   onAudioLevel: (level) => updateVoiceMeter(level),
   onHighlightLetter: (idx) => highlightLetterAtIndex(idx),
-  onFlashAll: (seq) => flashAllLetters(seq),
+  onFlashAll: (token) => flashAllLetters(token),
   onClearHighlights: () => clearLetterHighlights(),
   onWordMatched: (word) => {
+    closePictureDialog();
     handleWordSelected(word);
   },
   onUnmatchedSpeech: (transcript) => {
@@ -678,11 +901,30 @@ const speechEngine = new SpeechEngine({
 });
 
 // --- Event Listeners ---
+picturesBtn?.addEventListener('click', openPictureDialog);
+closePicturesBtn?.addEventListener('click', closePictureDialog);
+pictureDialog?.addEventListener('click', (e) => {
+  if (e.target === pictureDialog) closePictureDialog();
+});
+
 repeatBtn?.addEventListener('click', handleRepeat);
+practiceBtn?.addEventListener('click', togglePracticeMode);
 speedBtn?.addEventListener('click', cycleSpeed);
 phonicsBtn?.addEventListener('click', togglePhonics);
-printBtn?.addEventListener('click', () => window.print());
+printBtn?.addEventListener('click', printCurrentWorksheet);
 fullscreenBtn?.addEventListener('click', toggleFullscreen);
+
+syllablesEl?.addEventListener('click', () => {
+  const sel = window.getSelection ? window.getSelection().toString() : '';
+  if (sel.length > 0 || !currentWord || currentWord.toUpperCase() === 'NO') return;
+  speechEngine.speakSlowWord(currentWord);
+});
+syllablesEl?.addEventListener('keydown', (e) => {
+  if ((e.key === 'Enter' || e.key === ' ') && currentWord && currentWord.toUpperCase() !== 'NO') {
+    e.preventDefault();
+    speechEngine.speakSlowWord(currentWord);
+  }
+});
 
 pictureContainer?.addEventListener('click', () => {
   if (currentDestinationUrl) {
@@ -715,7 +957,7 @@ startMicBtn?.addEventListener('click', () => {
   speechEngine.startWhisperMic();
 });
 
-// Smart beforeunload: protect active kids' sessions without blocking intentional reload button
+// Smart beforeunload: protect active sessions without blocking intentional reload button
 let allowUnload = false;
 window.addEventListener('beforeunload', (event) => {
   if (!hasSpelledAny || allowUnload) return;
@@ -728,24 +970,32 @@ reloadBtn?.addEventListener('click', () => {
   location.reload();
 });
 
-// Keyboard shortcuts for parents/teachers (safely skip modified or focused-link presses)
+// Keyboard shortcuts
 document.addEventListener('keydown', (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (pictureDialog?.open) return;
   const tag = document.activeElement?.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA') return;
 
-  if ((e.key === ' ' && tag !== 'BUTTON' && tag !== 'A' && !document.activeElement?.classList.contains('letter-glyph')) || e.key.toLowerCase() === 'r') {
+  const key = e.key.toLowerCase();
+  if ((e.key === ' ' && tag !== 'BUTTON' && tag !== 'A' && !document.activeElement?.classList.contains('letter-glyph') && document.activeElement !== syllablesEl) || key === 'r') {
     e.preventDefault();
     handleRepeat();
-  } else if (e.key.toLowerCase() === 'm') {
+  } else if (key === 'm') {
     e.preventDefault();
     speechToggle?.click();
-  } else if (e.key.toLowerCase() === 'p') {
+  } else if (key === 'p') {
     e.preventDefault();
     togglePhonics();
-  } else if (e.key.toLowerCase() === 's') {
+  } else if (key === 's') {
     e.preventDefault();
     cycleSpeed();
+  } else if (key === 'h') {
+    e.preventDefault();
+    togglePracticeMode();
+  } else if (key === 'b') {
+    e.preventDefault();
+    openPictureDialog();
   } else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && recentWords.length > 1) {
     e.preventDefault();
     const curIdx = recentWords.findIndex((w) => w.toLowerCase() === currentWord.toLowerCase());
@@ -758,6 +1008,9 @@ document.addEventListener('keydown', (e) => {
 ['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange'].forEach((evt) => {
   document.addEventListener(evt, updateFullscreenUI);
 });
+
+window.addEventListener('online', updateOnlineStatus);
+window.addEventListener('offline', updateOnlineStatus);
 
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') requestWakeLock();
@@ -779,6 +1032,7 @@ if (document.fonts && document.fonts.ready) {
 // --- Bootstrap ---
 if (loadingMascot) loadingMascot.innerHTML = renderMascotSvg('listening');
 setMascotState('listening');
+updateOnlineStatus();
 checkFullscreenSupport();
 initPreferences();
 loadRecentWords();
@@ -789,7 +1043,6 @@ updatePrintWorksheet(currentWord, null);
 requestWakeLock();
 scheduleResize();
 
-// Pre-resolve starter word reference calmly
 resolveWordMedia(currentWord).then((media) => {
   if (!media || currentWord !== 'wonderful') return;
   updateReferenceUI(media.referenceUrl, media.serviceName, currentWord);
